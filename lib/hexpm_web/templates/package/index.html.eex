@@ -7,7 +7,7 @@
     <ul class="list">
       <%= for letter <- @letters do %>
       <li>
-        <a href="<%= Routes.package_path(Endpoint, :index, letter: letter) %>">
+        <a href="<%= ~p"/packages?letter=#{letter}" %>">
           <%= letter %>
         </a>
       </li>
@@ -16,11 +16,22 @@
   </div>
 <% end %>
 
-<%= if @package_count == 0 do %>
+<%= if @exact_match do %>
+  <div class="exact-match">
+    <h5>Exact Match:</h5>
+    <ul>
+      <%= render "_package.html", package: @exact_match, package_downloads: downloads_for_package(@exact_match, @downloads), view: @sort %>
+    </ul>
+  </div>
+<% end %>
+
+<%= if !@exact_match and @package_count == 0 do %>
   <div class="package-list no-results">
     <h4>No Results Found</h4>
   </div>
-<% else %>
+<% end %>
+
+<%= if @package_count > 0 do %>
   <%
   page = if @page == 1, do: nil, else: @page
 
@@ -29,7 +40,6 @@
   sort_recent_downloads_params = ViewHelpers.params(search: @search, page: page, sort: "recent_downloads")
   sort_created_params = ViewHelpers.params(search: @search, page: page, sort: "inserted_at")
   sort_updated_params = ViewHelpers.params(search: @search, page: page, sort: "updated_at")
-  sort_recently_published_params = ViewHelpers.params(search: @search, page: page, sort: "recently_published")
   %>
 
 <nav>
@@ -45,22 +55,19 @@
         </button>
         <ul class="dropdown-menu dropdown-menu-right" role="menu">
           <li role="presentation">
-            <a role="menuitem" tabindex="-1" href="<%= Routes.package_path(Endpoint, :index, sort_name_params) %>">Name</a>
+            <a role="menuitem" tabindex="-1" href="<%= ~p"/packages?#{sort_name_params}" %>">Name</a>
           </li>
           <li role="presentation">
-            <a role="menuitem" tabindex="-1" href="<%= Routes.package_path(Endpoint, :index, sort_total_downloads_params) %>">Total downloads</a>
+            <a role="menuitem" tabindex="-1" href="<%= ~p"/packages?#{sort_total_downloads_params}" %>">Total downloads</a>
           </li>
           <li role="presentation">
-            <a role="menuitem" tabindex="-1" href="<%= Routes.package_path(Endpoint, :index, sort_recent_downloads_params) %>">Recent downloads</a>
+            <a role="menuitem" tabindex="-1" href="<%= ~p"/packages?#{sort_recent_downloads_params}" %>">Recent downloads</a>
           </li>
           <li role="presentation">
-            <a role="menuitem" tabindex="-1" href="<%= Routes.package_path(Endpoint, :index, sort_created_params) %>">Recently created</a>
+            <a role="menuitem" tabindex="-1" href="<%= ~p"/packages?#{sort_created_params}" %>">Recently created</a>
           </li>
           <li role="presentation">
-            <a role="menuitem" tabindex="-1" href="<%= Routes.package_path(Endpoint, :index, sort_updated_params) %>">Recently updated</a>
-          </li>
-          <li role="presentation">
-            <a role="menuitem" tabindex="-1" href="<%= Routes.package_path(Endpoint, :index, sort_recently_published_params) %>">Recently published</a>
+            <a role="menuitem" tabindex="-1" href="<%= ~p"/packages?#{sort_updated_params}" %>">Recently updated</a>
           </li>
         </ul>
       </div>
@@ -69,15 +76,6 @@
 </nav>
 
 <div class="clearfix"></div>
-
-<%= if @exact_match do %>
-  <div class="exact-match">
-    <h5>Exact Match:</h5>
-    <ul>
-      <%= render "_package.html", package: @exact_match, package_downloads: downloads_for_package(@exact_match, @downloads), view: @sort %>
-    </ul>
-  </div>
-<% end %>
 
 <div class="package-list">
   <%= if @exact_match do %>
@@ -99,7 +97,7 @@ render HexpmWeb.SharedView,
        per_page: @per_page,
        unit: "package",
        units: "packages",
-       path_fn: &Routes.package_path(Endpoint, :index, ViewHelpers.params(search: @search, page: &1, sort: @sort, letter: @letter))
+       path_fn: &~p"/packages?#{ViewHelpers.params(search: @search, page: &1, sort: @sort, letter: @letter)}"
 %>
 
 <% end %>

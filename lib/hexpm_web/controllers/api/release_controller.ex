@@ -6,21 +6,18 @@ defmodule HexpmWeb.API.ReleaseController do
   plug :fetch_release when action in [:delete]
   plug :maybe_fetch_package when action in [:create, :publish]
 
-  plug :maybe_authorize,
-       [domain: "api", resource: "read", fun: &repository_access/2]
+  plug :authorize,
+       [domains: [{"api", "read"}], fun: {AuthHelpers, :organization_access}]
        when action in [:show]
 
   plug :authorize,
        [
-         domain: "api",
-         resource: "write",
-         fun: [&maybe_package_owner/2, &organization_billing_active/2]
+         domains: [{"api", "write"}, "package"],
+         fun: [{AuthHelpers, :package_owner}, {AuthHelpers, :organization_billing_active}]
        ]
-       when action in [:create, :publish]
+       when action in [:create, :publish, :delete]
 
-  plug :authorize,
-       [domain: "api", resource: "write", fun: [&package_owner/2, &organization_billing_active/2]]
-       when action in [:delete]
+  @download_period_params ~w(day month all)
 
   def publish(conn, %{"body" => body} = params) do
     replace? = Map.get(params, "replace", true)
@@ -37,7 +34,7 @@ defmodule HexpmWeb.API.ReleaseController do
     Releases.publish(
       conn.assigns.repository,
       conn.assigns.package,
-      conn.assigns.current_user,
+      conn.assigns.current_user || conn.assigns.current_organization.user,
       body,
       conn.assigns.meta,
       conn.assigns.inner_checksum,
@@ -53,14 +50,15 @@ defmodule HexpmWeb.API.ReleaseController do
       conn,
       conn.assigns.repository,
       conn.assigns.package,
-      conn.assigns.current_user,
+      conn.assigns.current_user || conn.assigns.current_organization.user,
       body
     )
   end
 
   def show(conn, params) do
     if release = conn.assigns.release do
-      downloads = Releases.downloads_by_period(release.id, params["downloads"])
+      downloads_period = Hexpm.Utils.safe_to_atom(params["downloads"], @download_period_params)
+      downloads = Downloads.by_period(release, downloads_period)
 
       release =
         release
@@ -133,7 +131,7 @@ defmodule HexpmWeb.API.ReleaseController do
   end
 
   defp publish_result({:ok, %{action: :insert, package: package, release: release}}, conn) do
-    location = Routes.api_release_url(conn, :show, package, release)
+    location = ~p"/api/packages/#{package}/releases/#{release}"
 
     conn
     |> put_resp_header("location", location)
@@ -169,9 +167,11 @@ defmodule HexpmWeb.API.ReleaseController do
   defp normalize_errors(changeset), do: changeset
 
   defp log_tarball(repository, package, version, request_id, body) do
-    filename = "#{repository}-#{package}-#{version}-#{request_id}.tar.gz"
-    key = Path.join(["debug", "tarballs", filename])
-    Hexpm.Store.put(:repo_bucket, key, body, [])
+    Task.Supervisor.start_child(Hexpm.Tasks, fn ->
+      filename = "#{repository}-#{package}-#{version}-#{request_id}.tar.gz"
+      key = Path.join(["debug", "tarballs", filename])
+      Hexpm.Store.put(:repo_bucket, key, body, [])
+    end)
   end
 
   defp release_metadata(tarball) do

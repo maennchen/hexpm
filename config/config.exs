@@ -3,6 +3,7 @@ import Config
 config :hexpm,
   user_confirm: true,
   user_agent_req: true,
+  billing_report: true,
   secret: "796f75666f756e64746865686578",
   support_email: "support@hex.pm",
   repo_bucket: {Hexpm.Store.Local, "repo_bucket"},
@@ -34,9 +35,11 @@ config :hexpm, Hexpm.RepoBase,
   priv: "priv/repo",
   migration_timestamps: [type: :utc_datetime_usec]
 
-config :sasl, sasl_error_logger: false
-
-config :hexpm, Hexpm.Emails.Mailer, adapter: Hexpm.Emails.Bamboo.SESAdapter
+config :hexpm, Hexpm.Emails.Mailer,
+  adapter: Bamboo.SendGridAdapter,
+  hackney_opts: [
+    recv_timeout: :timer.minutes(1)
+  ]
 
 config :phoenix, :template_engines, md: HexpmWeb.MarkdownEngine
 

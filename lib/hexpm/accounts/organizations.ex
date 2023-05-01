@@ -24,6 +24,10 @@ defmodule Hexpm.Accounts.Organizations do
     false
   end
 
+  def access?(%Organization{id: id}, %Organization{id: id}, _role) do
+    true
+  end
+
   def access?(organization, user, role) do
     Repo.one!(Organization.access(organization, user, role))
   end
@@ -33,7 +37,7 @@ defmodule Hexpm.Accounts.Organizations do
       Multi.new()
       |> Multi.insert(:organization, Organization.changeset(%Organization{}, params))
       |> Multi.insert(:repository, fn %{organization: organization} ->
-        %Repository{name: organization.name, public: false, organization_id: organization.id}
+        %Repository{name: organization.name, organization_id: organization.id}
       end)
       |> Multi.insert(:user, &User.build_organization(&1.organization))
       |> Multi.insert(:organization_user, fn %{organization: organization} ->
@@ -59,7 +63,7 @@ defmodule Hexpm.Accounts.Organizations do
       Multi.new()
       |> Multi.insert(:organization, Organization.build_from_user(organization_user))
       |> Multi.insert(:repository, fn %{organization: organization} ->
-        %Repository{name: organization.name, public: false, organization_id: organization.id}
+        %Repository{name: organization.name, organization_id: organization.id}
       end)
       |> Multi.update(:user, &User.to_organization(organization_user, &1.organization))
       |> Multi.insert(:organization_user, fn %{organization: organization} ->
@@ -105,9 +109,7 @@ defmodule Hexpm.Accounts.Organizations do
   end
 
   def remove_member(organization, user, audit: audit_data) do
-    # TODO: Remove package ownerships to packages in organization repository
-
-    count = Repo.aggregate(assoc(organization, :organization_users), :count, :id)
+    count = Repo.aggregate(assoc(organization, :organization_users), :count)
 
     if count == 1 do
       {:error, :last_member}
@@ -118,6 +120,7 @@ defmodule Hexpm.Accounts.Organizations do
         {:ok, _result} =
           Multi.new()
           |> Multi.delete(:organization_user, organization_user)
+          |> delete_package_owners(organization, user)
           |> audit(audit_data, "organization.member.remove", {organization, user})
           |> Repo.transaction()
       end
@@ -155,11 +158,23 @@ defmodule Hexpm.Accounts.Organizations do
   end
 
   def user_count(organization) do
-    Repo.aggregate(assoc(organization, :organization_users), :count, :id)
+    Repo.aggregate(assoc(organization, :organization_users), :count)
+  end
+
+  defp delete_package_owners(multi, organization, user) do
+    Multi.delete_all(multi, :package_owners, fn _changes ->
+      from(
+        po in PackageOwner,
+        join: p in assoc(po, :package),
+        join: r in assoc(p, :repository),
+        where: r.organization_id == ^organization.id,
+        where: po.user_id == ^user.id
+      )
+    end)
   end
 
   defp send_invite_email(organization, user) do
     Emails.organization_invite(organization, user)
-    |> Mailer.deliver_now_throttled()
+    |> Mailer.deliver_later!()
   end
 end

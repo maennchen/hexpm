@@ -2,12 +2,12 @@ defmodule Hexpm.Repository.PackageTest do
   use Hexpm.DataCase
 
   alias Hexpm.Accounts.User
-  alias Hexpm.Repository.Package
+  alias Hexpm.Repository.{Package, Repository}
 
   setup do
     user = insert(:user)
     repository = insert(:repository)
-    public_repository = insert(:repository, public: true)
+    public_repository = Hexpm.Repo.get(Repository, 1)
     %{user: user, repository: repository, public_repository: public_repository}
   end
 
@@ -139,6 +139,47 @@ defmodule Hexpm.Repository.PackageTest do
              |> Enum.map(& &1.name)
   end
 
+  test "search updated_after", %{repository: repository} do
+    %Package{id: package1_id} =
+      insert(:package,
+        repository_id: repository.id,
+        inserted_at: ~U[2023-01-01T00:00:00Z],
+        updated_at: ~U[2023-01-03T00:00:00Z]
+      )
+
+    %Package{id: package2_id} =
+      insert(:package,
+        repository_id: repository.id,
+        inserted_at: ~U[2023-01-02T00:00:00Z],
+        updated_at: ~U[2023-01-01T00:00:00Z]
+      )
+
+    %Package{id: package3_id} =
+      insert(:package,
+        repository_id: repository.id,
+        inserted_at: ~U[2023-01-03T00:00:00Z],
+        updated_at: ~U[2023-01-02T00:00:00Z]
+      )
+
+    insert(:package,
+      repository_id: repository.id,
+      inserted_at: ~U[2023-01-04T00:00:00Z],
+      updated_at: ~U[2022-12-31T00:00:00Z]
+    )
+
+    assert [^package2_id, ^package3_id, ^package1_id] =
+             Package.all(
+               [repository],
+               1,
+               10,
+               "updated_after:2023-01-01T00:00:00Z",
+               :inserted_at,
+               nil
+             )
+             |> Repo.all()
+             |> Enum.map(& &1.id)
+  end
+
   test "search extra metadata", %{user: user, repository: repository} do
     meta = %{
       "licenses" => ["Apache-2.0", "BSD-3-Clause"],
@@ -227,8 +268,16 @@ defmodule Hexpm.Repository.PackageTest do
   test "sort packages by total downloads", %{repository: repository} do
     %{id: ecto_id} = insert(:package, repository_id: repository.id)
     %{id: phoenix_id} = insert(:package, repository_id: repository.id)
-    insert(:release, package_id: phoenix_id, daily_downloads: [build(:download, downloads: 10)])
-    insert(:release, package_id: ecto_id, daily_downloads: [build(:download, downloads: 5)])
+
+    insert(:release,
+      package_id: phoenix_id,
+      daily_downloads: [build(:download, package_id: phoenix_id, downloads: 10)]
+    )
+
+    insert(:release,
+      package_id: ecto_id,
+      daily_downloads: [build(:download, package_id: ecto_id, downloads: 5)]
+    )
 
     :ok = Hexpm.Repo.refresh_view(Hexpm.Repository.PackageDownload)
 
@@ -246,41 +295,31 @@ defmodule Hexpm.Repository.PackageTest do
     insert(
       :release,
       package_id: phoenix_id,
-      daily_downloads: [build(:download, downloads: 10, day: Hexpm.Utils.utc_days_ago(91))]
+      daily_downloads: [
+        build(:download, package_id: phoenix_id, downloads: 10, day: Hexpm.Utils.utc_days_ago(91))
+      ]
     )
 
     insert(
       :release,
       package_id: decimal_id,
-      daily_downloads: [build(:download, downloads: 10, day: Hexpm.Utils.utc_days_ago(35))]
+      daily_downloads: [
+        build(:download, package_id: decimal_id, downloads: 10, day: Hexpm.Utils.utc_days_ago(35))
+      ]
     )
 
     insert(
       :release,
       package_id: ecto_id,
-      daily_downloads: [build(:download, downloads: 5, day: Hexpm.Utils.utc_days_ago(10))]
+      daily_downloads: [
+        build(:download, package_id: ecto_id, downloads: 5, day: Hexpm.Utils.utc_days_ago(10))
+      ]
     )
 
     :ok = Hexpm.Repo.refresh_view(Hexpm.Repository.PackageDownload)
 
     assert [decimal_id, ecto_id, phoenix_id] ==
              Package.all([repository], 1, 10, nil, :recent_downloads, nil)
-             |> Repo.all()
-             |> Enum.map(& &1.id)
-  end
-
-  test "sort packages by recent releases", %{repository: repository} do
-    %{id: ecto_id} = insert(:package, repository_id: repository.id)
-    %{id: phoenix_id} = insert(:package, repository_id: repository.id)
-    %{id: decimal_id} = insert(:package, repository_id: repository.id)
-
-    insert(:release, package_id: decimal_id, version: "0.0.1")
-    insert(:release, package_id: phoenix_id, version: "0.0.1")
-    insert(:release, package_id: ecto_id, version: "0.0.1")
-    insert(:release, package_id: decimal_id, version: "0.0.2")
-
-    assert [decimal_id, ecto_id, phoenix_id] ==
-             Package.all([repository], 1, 10, nil, :recently_published, nil)
              |> Repo.all()
              |> Enum.map(& &1.id)
   end

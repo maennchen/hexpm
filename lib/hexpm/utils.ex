@@ -18,8 +18,7 @@ defmodule Hexpm.Utils do
   end
 
   defp secure_check(<<left, left_rest::binary>>, <<right, right_rest::binary>>, acc) do
-    import Bitwise, only: [|||: 2, ^^^: 2]
-    secure_check(left_rest, right_rest, acc ||| left ^^^ right)
+    secure_check(left_rest, right_rest, Bitwise.bor(acc, Bitwise.bxor(left, right)))
   end
 
   defp secure_check(<<>>, <<>>, acc) do
@@ -244,6 +243,13 @@ defmodule Hexpm.Utils do
     end
   end
 
+  def parse_ip_mask(string) do
+    case String.split(string, "/") do
+      [ip, mask] -> {Hexpm.Utils.parse_ip(ip), String.to_integer(mask)}
+      [ip] -> {Hexpm.Utils.parse_ip(ip), 32}
+    end
+  end
+
   def in_ip_range?(_range, nil) do
     false
   end
@@ -266,6 +272,11 @@ defmodule Hexpm.Utils do
   def diff_html_url(package_name, version, previous_version) do
     diff_url = Application.fetch_env!(:hexpm, :diff_url)
     "#{diff_url}/diff/#{package_name}/#{previous_version}..#{version}"
+  end
+
+  def preview_html_url(package_name, version) do
+    preview_url = Application.fetch_env!(:hexpm, :preview_url)
+    "#{preview_url}/preview/#{package_name}/#{version}"
   end
 
   @doc """

@@ -4,6 +4,8 @@ defmodule Hexpm.ShortURLs.ShortURL do
   alias Hexpm.ShortURLs.ShortURL
   alias Hexpm.Repo
 
+  @derive {Phoenix.Param, key: :short_code}
+
   schema "short_urls" do
     field :url, :string
     field :short_code, :string
@@ -49,7 +51,9 @@ defmodule Hexpm.ShortURLs.ShortURL do
   defp hexpm_url?(nil), do: []
 
   defp hexpm_url?(url) do
-    if URI.parse(url).host =~ ~r/^[\w\.]*hex.pm$/ do
+    host = URI.parse(url).host
+
+    if host == "hex.pm" or String.ends_with?(host, ".hex.pm") do
       []
     else
       [url: "domain must match hex.pm or *.hex.pm"]

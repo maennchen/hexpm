@@ -18,7 +18,7 @@ defmodule Hexpm.Repository.PackageMetadata do
   end
 
   defp validate_required_meta(changeset, package) do
-    if package.repository.public do
+    if package.repository.id == 1 do
       validate_required(changeset, ~w(description licenses)a)
     else
       changeset
@@ -35,9 +35,7 @@ defmodule Hexpm.Repository.PackageMetadata do
   end
 
   defp valid_url?(url) do
-    case :http_uri.parse(to_charlist(url)) do
-      {:ok, _} -> true
-      _ -> false
-    end
+    uri = URI.parse(url)
+    uri.scheme in ["http", "https"] and !!uri.host
   end
 end

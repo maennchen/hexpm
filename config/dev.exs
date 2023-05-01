@@ -1,10 +1,12 @@
 import Config
 
 config :hexpm,
-  tmp_dir: Path.expand("tmp/dev"),
-  private_key: File.read!("test/fixtures/private.pem"),
+  billing_report: false,
+  tmp_dir: Path.expand("../tmp/dev", __DIR__),
+  private_key: Path.expand("../test/fixtures/private.pem", __DIR__) |> File.read!(),
   docs_url: "http://localhost:4002",
   diff_url: "http://localhost:4004",
+  preview_url: "http://localhost:4005",
   cdn_url: "http://localhost:4000",
   billing_url: "http://localhost:4001",
   billing_key: "hex_billing_key"
@@ -49,5 +51,3 @@ config :hexpm, Hexpm.RepoBase,
   pool_size: 5
 
 config :hexpm, Hexpm.Emails.Mailer, adapter: Bamboo.LocalAdapter
-
-config :goth, config: %{"project_id" => "hexpm"}

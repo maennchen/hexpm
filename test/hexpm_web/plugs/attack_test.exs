@@ -6,7 +6,7 @@ defmodule HexpmWeb.Plugs.AttackTest do
 
   defmodule Hello do
     # need to use Phoenix.Controller because RateLimit.Plug uses ErrorView
-    # which in turn requres `plug :accepts`
+    # which in turn requires `plug :accepts`
     use Phoenix.Controller
 
     plug :accepts, ~w(json)
@@ -135,6 +135,38 @@ defmodule HexpmWeb.Plugs.AttackTest do
       assert conn.resp_body == Jason.encode!(%{status: 403, message: "Blocked"})
     end
 
+    test "halts requests from IPs that are blocked outside of /api" do
+      insert(:block_address, ip: "10.1.1.1")
+      Hexpm.BlockAddress.reload()
+
+      conn = %Plug.Conn{request_ip({10, 1, 1, 1}) | request_path: "/"}
+      assert conn.status == 403
+      assert conn.resp_body == Jason.encode!(%{status: 403, message: "Blocked"})
+    end
+
+    test "halts requests from IP masks that are blocked" do
+      insert(:block_address, ip: "10.1.1.0/24")
+      Hexpm.BlockAddress.reload()
+
+      conn = request_ip({10, 1, 1, 1})
+      assert conn.status == 403
+      assert conn.resp_body == Jason.encode!(%{status: 403, message: "Blocked"})
+
+      conn = request_ip({10, 1, 1, 127})
+      assert conn.status == 403
+      assert conn.resp_body == Jason.encode!(%{status: 403, message: "Blocked"})
+
+      conn = request_ip({10, 1, 1, 255})
+      assert conn.status == 403
+      assert conn.resp_body == Jason.encode!(%{status: 403, message: "Blocked"})
+
+      conn = request_ip({10, 1, 2, 0})
+      assert conn.status == 200
+
+      conn = request_ip({10, 1, 0, 0})
+      assert conn.status == 200
+    end
+
     test "allows requests again when the IP is unblocked" do
       blocked_address = insert(:block_address, ip: "20.2.2.2")
       Hexpm.BlockAddress.reload()
@@ -153,7 +185,7 @@ defmodule HexpmWeb.Plugs.AttackTest do
   end
 
   defp request_ip(remote_ip) do
-    conn(:get, "/")
+    conn(:get, "/api/")
     |> Map.put(:remote_ip, remote_ip)
     |> assign(:current_user, nil)
     |> assign(:current_organization, nil)
@@ -161,7 +193,7 @@ defmodule HexpmWeb.Plugs.AttackTest do
   end
 
   defp request_user(user) do
-    conn(:get, "/")
+    conn(:get, "/api/")
     |> Map.put(:remote_ip, {10, 0, 0, 1})
     |> assign(:current_user, user)
     |> assign(:current_organization, nil)

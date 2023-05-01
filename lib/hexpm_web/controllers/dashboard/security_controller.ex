@@ -10,7 +10,7 @@ defmodule HexpmWeb.Dashboard.SecurityController do
     if User.tfa_enabled?(user) and not user.tfa.app_enabled do
       conn
       |> put_flash(:error, "Please complete your two-factor authentication setup")
-      |> redirect(to: Routes.dashboard_tfa_setup_path(conn, :index))
+      |> redirect(to: ~p"/dashboard/tfa/setup")
     else
       render_index(conn)
     end
@@ -22,7 +22,7 @@ defmodule HexpmWeb.Dashboard.SecurityController do
 
     conn
     |> put_flash(:info, "Two factor authentication has been enabled.")
-    |> redirect(to: Routes.dashboard_tfa_setup_path(conn, :index))
+    |> redirect(to: ~p"/dashboard/tfa/setup")
   end
 
   def disable_tfa(conn, _params) do
@@ -31,7 +31,7 @@ defmodule HexpmWeb.Dashboard.SecurityController do
 
     conn
     |> put_flash(:info, "Two factor authentication has been disabled.")
-    |> redirect(to: Routes.dashboard_security_path(conn, :index))
+    |> redirect(to: ~p"/dashboard/security")
   end
 
   def link_github_account(conn, _params) do
@@ -52,7 +52,7 @@ defmodule HexpmWeb.Dashboard.SecurityController do
 
     conn
     |> put_flash(:info, "New two-factor recovery codes successfully generated.")
-    |> redirect(to: Routes.dashboard_security_path(conn, :index))
+    |> redirect(to: ~p"/dashboard/security")
   end
 
   def reset_auth_app(conn, _params) do
@@ -61,7 +61,7 @@ defmodule HexpmWeb.Dashboard.SecurityController do
 
     conn
     |> put_flash(:info, "Please complete your two-factor authentication setup")
-    |> redirect(to: Routes.dashboard_tfa_setup_path(conn, :index))
+    |> redirect(to: ~p"/dashboard/tfa/setup")
   end
 
   defp render_index(conn) do

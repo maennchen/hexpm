@@ -1,8 +1,7 @@
 defmodule HexpmWeb.ViewHelpers do
   use Phoenix.HTML
+  use HexpmWeb, :verified_routes
   alias Hexpm.Repository.{Package, Release}
-  alias HexpmWeb.Endpoint
-  alias HexpmWeb.Router.Helpers, as: Routes
 
   def logged_in?(assigns) do
     !!assigns[:current_user]
@@ -20,52 +19,52 @@ defmodule HexpmWeb.ViewHelpers do
     repository <> " / " <> package
   end
 
-  def path_for_package(package) do
-    if package.repository.id == 1 do
-      Routes.package_path(Endpoint, :show, package, [])
-    else
-      Routes.package_path(Endpoint, :show, package.repository, package, [])
-    end
+  def path_for_package(%Package{repository_id: 1} = package) do
+    ~p"/packages/#{package}"
+  end
+
+  def path_for_package(%Package{} = package) do
+    ~p"/packages/#{package.repository}/#{package}"
   end
 
   def path_for_package("hexpm", package) do
-    Routes.package_path(Endpoint, :show, package, [])
+    ~p"/packages/#{package}"
   end
 
   def path_for_package(repository, package) do
-    Routes.package_path(Endpoint, :show, repository, package, [])
+    ~p"/packages/#{repository}/#{package}"
   end
 
-  def path_for_release(package, release) do
-    if package.repository.id == 1 do
-      Routes.package_path(Endpoint, :show, package, release, [])
-    else
-      Routes.package_path(Endpoint, :show, package.repository, package, release, [])
-    end
+  def path_for_release(%Package{repository_id: 1} = package, release) do
+    ~p"/packages/#{package}/#{release}"
   end
 
-  def path_for_releases(package) do
-    if package.repository.id == 1 do
-      Routes.version_path(Endpoint, :index, package, [])
-    else
-      Routes.version_path(Endpoint, :index, package.repository, package, [])
-    end
+  def path_for_release(%Package{} = package, release) do
+    ~p"/packages/#{package.repository}/#{package}/#{release}"
+  end
+
+  def path_for_releases(%Package{repository_id: 1} = package) do
+    ~p"/packages/#{package}/versions"
+  end
+
+  def path_for_releases(%Package{} = package) do
+    ~p"/packages/#{package.repository}/#{package}/versions"
   end
 
   def html_url_for_package(%Package{repository_id: 1} = package) do
-    Routes.package_url(Endpoint, :show, package, [])
+    url(~p"/packages/#{package}")
   end
 
   def html_url_for_package(%Package{} = package) do
-    Routes.package_url(Endpoint, :show, package.repository, package, [])
+    url(~p"/packages/#{package.repository}/#{package}")
   end
 
   def html_url_for_release(%Package{repository_id: 1} = package, release) do
-    Routes.package_url(Endpoint, :show, package, release, [])
+    url(~p"/packages/#{package}/#{release}")
   end
 
   def html_url_for_release(%Package{} = package, release) do
-    Routes.package_url(Endpoint, :show, package.repository, package, release, [])
+    url(~p"/packages/#{package.repository}/#{package}/#{release}")
   end
 
   def docs_html_url_for_package(package) do
@@ -83,26 +82,19 @@ defmodule HexpmWeb.ViewHelpers do
   end
 
   def url_for_package(%Package{repository_id: 1} = package) do
-    Routes.api_package_url(Endpoint, :show, package, [])
+    url(~p"/api/packages/#{package}")
   end
 
-  def url_for_package(package) do
-    Routes.api_package_url(Endpoint, :show, package.repository, package, [])
+  def url_for_package(%Package{} = package) do
+    url(~p"/api/repos/#{package.repository}/packages/#{package}")
   end
 
   def url_for_release(%Package{repository_id: 1} = package, release) do
-    Routes.api_release_url(Endpoint, :show, package, release, [])
+    url(~p"/api/packages/#{package}/releases/#{release}")
   end
 
   def url_for_release(%Package{} = package, release) do
-    Routes.api_release_url(
-      Endpoint,
-      :show,
-      package.repository,
-      package,
-      to_string(release.version),
-      []
-    )
+    url(~p"/api/repos/#{package.repository}/packages/#{package}/releases/#{release}")
   end
 
   def gravatar_url(nil, size) do
@@ -284,39 +276,17 @@ defmodule HexpmWeb.ViewHelpers do
   defp rel_from_now({day, {_, _, _}}) when day < 0, do: "about now"
   defp rel_from_now({day, {_, _, _}}), do: "#{day} days ago"
 
-  def pretty_date(%{year: year, month: month, day: day}) do
-    "#{pretty_month(month)} #{day}, #{year}"
+  def pretty_datetime(datetime) do
+    Calendar.strftime(datetime, "%b %d, %Y, %H:%M")
   end
 
-  def pretty_date(%{year: year, month: month, day: day}, :short) do
-    "#{pretty_month_short(month)} #{day}, #{year}"
+  def pretty_date(date) do
+    Calendar.strftime(date, "%B %d, %Y")
   end
 
-  defp pretty_month(1), do: "January"
-  defp pretty_month(2), do: "February"
-  defp pretty_month(3), do: "March"
-  defp pretty_month(4), do: "April"
-  defp pretty_month(5), do: "May"
-  defp pretty_month(6), do: "June"
-  defp pretty_month(7), do: "July"
-  defp pretty_month(8), do: "August"
-  defp pretty_month(9), do: "September"
-  defp pretty_month(10), do: "October"
-  defp pretty_month(11), do: "November"
-  defp pretty_month(12), do: "December"
-
-  defp pretty_month_short(1), do: "Jan"
-  defp pretty_month_short(2), do: "Feb"
-  defp pretty_month_short(3), do: "Mar"
-  defp pretty_month_short(4), do: "Apr"
-  defp pretty_month_short(5), do: "May"
-  defp pretty_month_short(6), do: "Jun"
-  defp pretty_month_short(7), do: "Jul"
-  defp pretty_month_short(8), do: "Aug"
-  defp pretty_month_short(9), do: "Sep"
-  defp pretty_month_short(10), do: "Oct"
-  defp pretty_month_short(11), do: "Nov"
-  defp pretty_month_short(12), do: "Dec"
+  def pretty_date(date, :short) do
+    Calendar.strftime(date, "%b %d, %Y")
+  end
 
   def if_value(arg, nil, _fun), do: arg
   def if_value(arg, false, _fun), do: arg

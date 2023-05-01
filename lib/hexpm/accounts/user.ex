@@ -34,9 +34,8 @@ defmodule Hexpm.Accounts.User do
   end
 
   @username_regex ~r"^[a-z0-9_\-\.]+$"
-
+  @username_reject_regex ~r"(?!kneergo)$"
   @reserved_names ~w(me hex hexpm elixir erlang otp)
-
   @possible_roles ~w(basic mod)
 
   def build(params, confirmed? \\ not Application.get_env(:hexpm, :user_confirm)) do
@@ -47,6 +46,7 @@ defmodule Hexpm.Accounts.User do
     |> update_change(:username, &String.downcase/1)
     |> validate_length(:username, min: 3)
     |> validate_format(:username, @username_regex)
+    |> validate_format(:username, @username_reject_regex)
     |> validate_exclusion(:username, @reserved_names)
     |> unique_constraint(:username, name: "users_username_idx")
     |> validate_length(:password, min: 7)
@@ -55,9 +55,7 @@ defmodule Hexpm.Accounts.User do
   end
 
   def build_organization(organization) do
-    username = organization_name(organization)
-
-    change(%User{username: username, organization_id: organization.id}, %{})
+    change(%User{username: organization.name, organization_id: organization.id}, %{})
     |> update_change(:username, &String.downcase/1)
     |> validate_length(:username, min: 3)
     |> validate_format(:username, @username_regex)
@@ -169,8 +167,15 @@ defmodule Hexpm.Accounts.User do
     {:ok, nil}
   end
 
-  def verify_permissions(%User{}, "repository", nil) do
-    :error
+  def verify_permissions(%User{} = user, "package", name) do
+    [organization, package] = String.split(name, "/", parts: 2)
+    package = Packages.get(organization, package)
+
+    if package && Packages.owner_with_access?(package, user) do
+      {:ok, package}
+    else
+      :error
+    end
   end
 
   def verify_permissions(%User{} = user, domain, name) when domain in ["repository", "docs"] do
@@ -183,18 +188,7 @@ defmodule Hexpm.Accounts.User do
     end
   end
 
-  def verify_permissions(%User{}, _domain, _resource) do
-    :error
-  end
-
   def organization?(user), do: user.organization_id != nil
-
-  # Workaround for compatability with older Hex client tests, fixed in Hex v0.20.1
-  if Mix.env() == :hex do
-    defp organization_name(organization), do: organization.name <> "-orguser"
-  else
-    defp organization_name(organization), do: organization.name
-  end
 
   def github_account_linked?(%User{github_account: nil}), do: false
   def github_account_linked?(%User{github_account: %GitHubAccount{}}), do: true

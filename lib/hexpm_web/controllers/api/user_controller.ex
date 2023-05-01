@@ -1,15 +1,16 @@
 defmodule HexpmWeb.API.UserController do
   use HexpmWeb, :controller
 
-  plug :authorize, [domain: "api", resource: "read"] when action in [:test]
-  plug :authorize, [domain: "api", resource: "read"] when action in [:me, :audit_logs]
+  plug :authorize,
+       [authentication: :required, domains: [{"api", "read"}]]
+       when action in [:test, :me, :audit_logs]
 
   def create(conn, params) do
     params = email_param(params)
 
     case Users.add(params, audit: audit_data(conn)) do
       {:ok, user} ->
-        location = Routes.api_user_url(conn, :show, user.username)
+        location = ~p"/api/users/#{user}"
 
         conn
         |> put_resp_header("location", location)

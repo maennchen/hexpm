@@ -2,10 +2,13 @@ defmodule HexpmWeb.API.RepositoryController do
   use HexpmWeb, :controller
 
   plug :fetch_repository when action in [:show]
-  plug :maybe_authorize, [domain: "api", resource: "read"] when action in [:index]
 
-  plug :maybe_authorize,
-       [domain: "api", resource: "read", fun: &repository_access/2]
+  plug :authorize,
+       [domains: [{"api", "read"}]]
+       when action in [:index]
+
+  plug :authorize,
+       [domains: [{"api", "read"}], fun: {AuthHelpers, :organization_access}]
        when action in [:show]
 
   def index(conn, _params) do
@@ -42,6 +45,6 @@ defmodule HexpmWeb.API.RepositoryController do
   defp all_by_organization(nil), do: []
   defp all_by_organization(organization), do: [organization.repository]
 
-  defp show_cachability(%Repository{public: true}), do: :public
-  defp show_cachability(%Repository{public: false}), do: :private
+  defp show_cachability(%Repository{id: 1}), do: :public
+  defp show_cachability(%Repository{}), do: :private
 end

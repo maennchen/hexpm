@@ -27,11 +27,22 @@ defmodule HexpmWeb.PageControllerTest do
     insert(:release, package: p2, version: "0.0.2", inserted_at: %{base_date | second: 05})
     insert(:release, package: p3, version: "0.0.1", inserted_at: %{base_date | second: 06})
 
-    insert(:download, release: rel1, downloads: 7, day: NaiveDateTime.to_date(base_date))
-    insert(:download, release: rel2, downloads: 2, day: NaiveDateTime.to_date(base_date))
+    insert(:download,
+      package: p1,
+      release: rel1,
+      downloads: 7,
+      day: NaiveDateTime.to_date(base_date)
+    )
+
+    insert(:download,
+      package: p2,
+      release: rel2,
+      downloads: 2,
+      day: NaiveDateTime.to_date(base_date)
+    )
 
     old_date = today |> NaiveDateTime.add(-91 * seconds_in_a_day) |> NaiveDateTime.to_date()
-    insert(:download, release: rel2, downloads: 1, day: old_date)
+    insert(:download, package: p2, release: rel2, downloads: 1, day: old_date)
 
     Repo.refresh_view(PackageDownload)
     Repo.refresh_view(ReleaseDownload)
@@ -39,11 +50,8 @@ defmodule HexpmWeb.PageControllerTest do
     %{package1: p1, package2: p2, package3: p3}
   end
 
-  test "index", %{package1: package1, package2: package2} do
+  test "index", c do
     conn = get(build_conn(), "/")
-
-    package1_name = package1.name
-    package2_name = package2.name
 
     assert conn.status == 200
     assert conn.assigns.total["all"] == 10
@@ -53,9 +61,10 @@ defmodule HexpmWeb.PageControllerTest do
     assert Enum.count(conn.assigns.releases_new) == 6
     assert Enum.count(conn.assigns.package_new) == 3
 
-    assert [
-             {^package1_name, %DateTime{}, %Hexpm.Repository.PackageMetadata{}, 7},
-             {^package2_name, %DateTime{}, %Hexpm.Repository.PackageMetadata{}, 2}
-           ] = conn.assigns.package_top
+    assert [{package1, 7}, {package2, 2}] = conn.assigns.package_top
+    assert package1.id == c.package1.id
+    assert package1.latest_release.version == "0.1.0"
+    assert package2.id == c.package2.id
+    assert package2.latest_release.version == "0.0.2"
   end
 end

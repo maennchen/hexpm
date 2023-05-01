@@ -1,9 +1,9 @@
 import Hexpm.Factory
-
 alias Hexpm.Accounts.Users
 alias Hexpm.Repository.{PackageDependant, PackageDownload, ReleaseDownload}
 
 Hexpm.Fake.start()
+Hexpm.setup()
 
 lorem =
   "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
@@ -59,6 +59,13 @@ Hexpm.Repo.transaction(fn ->
       emails: [build(:email, email: "justin@example.com")],
       password: password.("justinjustin")
     )
+
+  insert(
+    :user,
+    username: "nopkg",
+    emails: [build(:email, email: "nopkg@example.com")],
+    password: password.("nopkgnopkg")
+  )
 
   decimal =
     insert(
@@ -119,6 +126,7 @@ Hexpm.Repo.transaction(fn ->
 
   insert(
     :download,
+    package: decimal,
     release: decimal_release,
     downloads: 1_200_000,
     day: Hexpm.Utils.utc_days_ago(180)
@@ -126,6 +134,7 @@ Hexpm.Repo.transaction(fn ->
 
   insert(
     :download,
+    package: decimal,
     release: decimal_release,
     downloads: 200_000,
     day: Hexpm.Utils.utc_days_ago(90)
@@ -133,12 +142,18 @@ Hexpm.Repo.transaction(fn ->
 
   insert(
     :download,
+    package: decimal,
     release: decimal_release,
     downloads: 56_000,
     day: Hexpm.Utils.utc_days_ago(35)
   )
 
-  insert(:download, release: decimal_release, downloads: 1_000, day: Hexpm.Utils.utc_yesterday())
+  insert(:download,
+    package: decimal,
+    release: decimal_release,
+    downloads: 1_000,
+    day: Hexpm.Utils.utc_yesterday()
+  )
 
   postgrex =
     insert(
@@ -213,6 +228,7 @@ Hexpm.Repo.transaction(fn ->
 
   insert(
     :download,
+    package: postgrex,
     release: postgrex_release,
     downloads: 1_200_000,
     day: Hexpm.Utils.utc_days_ago(180)
@@ -220,6 +236,7 @@ Hexpm.Repo.transaction(fn ->
 
   insert(
     :download,
+    package: postgrex,
     release: postgrex_release,
     downloads: 200_000,
     day: Hexpm.Utils.utc_days_ago(90)
@@ -227,12 +244,18 @@ Hexpm.Repo.transaction(fn ->
 
   insert(
     :download,
+    package: postgrex,
     release: postgrex_release,
     downloads: 56_000,
     day: Hexpm.Utils.utc_days_ago(35)
   )
 
-  insert(:download, release: postgrex_release, downloads: 1_000, day: Hexpm.Utils.utc_yesterday())
+  insert(:download,
+    package: postgrex,
+    release: postgrex_release,
+    downloads: 1_000,
+    day: Hexpm.Utils.utc_yesterday()
+  )
 
   ecto =
     insert(
@@ -407,12 +430,31 @@ Hexpm.Repo.transaction(fn ->
       has_docs: true
     )
 
-  insert(:download, release: rel, downloads: 1_500_000, day: Hexpm.Utils.utc_days_ago(180))
-  insert(:download, release: rel, downloads: 200_000, day: Hexpm.Utils.utc_days_ago(90))
-  insert(:download, release: rel, downloads: 1, day: Hexpm.Utils.utc_days_ago(45))
-  insert(:download, release: rel, downloads: 56_000, day: Hexpm.Utils.utc_days_ago(35))
-  insert(:download, release: rel, downloads: 1, day: Hexpm.Utils.utc_days_ago(2))
-  insert(:download, release: rel, downloads: 42, day: Hexpm.Utils.utc_yesterday())
+  insert(:download,
+    package: ecto,
+    release: rel,
+    downloads: 1_500_000,
+    day: Hexpm.Utils.utc_days_ago(180)
+  )
+
+  insert(:download,
+    package: ecto,
+    release: rel,
+    downloads: 200_000,
+    day: Hexpm.Utils.utc_days_ago(90)
+  )
+
+  insert(:download, package: ecto, release: rel, downloads: 1, day: Hexpm.Utils.utc_days_ago(45))
+
+  insert(:download,
+    package: ecto,
+    release: rel,
+    downloads: 56_000,
+    day: Hexpm.Utils.utc_days_ago(35)
+  )
+
+  insert(:download, package: ecto, release: rel, downloads: 1, day: Hexpm.Utils.utc_days_ago(2))
+  insert(:download, package: ecto, release: rel, downloads: 42, day: Hexpm.Utils.utc_yesterday())
 
   myrepo =
     insert(
@@ -544,10 +586,33 @@ Hexpm.Repo.transaction(fn ->
           )
       )
 
-    insert(:download, release: rel1, downloads: div(index, 2), day: Hexpm.Utils.utc_days_ago(180))
-    insert(:download, release: rel1, downloads: div(index, 2), day: Hexpm.Utils.utc_days_ago(90))
-    insert(:download, release: rel1, downloads: div(index, 2), day: Hexpm.Utils.utc_days_ago(35))
-    insert(:download, release: rel2, downloads: div(index, 2), day: Hexpm.Utils.utc_yesterday())
+    insert(:download,
+      package: ups,
+      release: rel1,
+      downloads: div(index, 2),
+      day: Hexpm.Utils.utc_days_ago(180)
+    )
+
+    insert(:download,
+      package: ups,
+      release: rel1,
+      downloads: div(index, 2),
+      day: Hexpm.Utils.utc_days_ago(90)
+    )
+
+    insert(:download,
+      package: ups,
+      release: rel1,
+      downloads: div(index, 2),
+      day: Hexpm.Utils.utc_days_ago(35)
+    )
+
+    insert(:download,
+      package: ups,
+      release: rel2,
+      downloads: div(index, 2),
+      day: Hexpm.Utils.utc_yesterday()
+    )
   end)
 
   nerves =
@@ -579,10 +644,19 @@ Hexpm.Repo.transaction(fn ->
         )
     )
 
-  insert(:download, release: rel, downloads: 20, day: Hexpm.Utils.utc_yesterday())
+  today = Date.utc_today()
+
+  Enum.each(1..31, fn day ->
+    insert(:download,
+      package: nerves,
+      release: rel,
+      downloads: Enum.random(1..100),
+      day: Date.add(today, -day)
+    )
+  end)
 
   Enum.each(1..10, fn index ->
-    nerves_pkg =
+    nerves =
       insert(
         :package,
         name: "nerves_pkg_#{index}",
@@ -600,7 +674,7 @@ Hexpm.Repo.transaction(fn ->
     rel =
       insert(
         :release,
-        package: nerves_pkg,
+        package: nerves,
         version: "0.0.1",
         publisher: justin,
         meta:
@@ -613,13 +687,16 @@ Hexpm.Repo.transaction(fn ->
 
     insert(
       :download,
+      package: nerves,
       release: rel,
       downloads: div(index, 2) + rem(index, 2),
       day: Hexpm.Utils.utc_yesterday()
     )
   end)
 
-  Hexpm.Repo.refresh_view(PackageDependant)
-  Hexpm.Repo.refresh_view(PackageDownload)
-  Hexpm.Repo.refresh_view(ReleaseDownload)
+  Hexpm.Repo.refresh_view(PackageDependant, concurrently: false)
+  Hexpm.Repo.refresh_view(PackageDownload, concurrently: false)
+  Hexpm.Repo.refresh_view(ReleaseDownload, concurrently: false)
 end)
+
+Hexpm.Repository.RegistryBuilder.full(Hexpm.Repository.Repositories.get("hexpm"))

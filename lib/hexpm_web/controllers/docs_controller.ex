@@ -2,7 +2,7 @@ defmodule HexpmWeb.DocsController do
   use HexpmWeb, :controller
 
   def index(conn, _params) do
-    redirect(conn, to: Routes.docs_path(conn, :usage))
+    redirect(conn, to: ~p"/docs/usage")
   end
 
   def usage(conn, _params) do
@@ -65,7 +65,7 @@ defmodule HexpmWeb.DocsController do
   end
 
   def rebar3_tasks(conn, _params) do
-    url = "https://www.rebar3.org/docs/package_management/hex_package_management/"
+    url = "https://rebar3.org/docs/package_management/hex_package_management/"
     redirect(conn, external: url)
   end
 
@@ -120,6 +120,17 @@ defmodule HexpmWeb.DocsController do
       view: "public_keys.html",
       view_name: :public_keys,
       title: "Public keys",
+      container: "container page docs"
+    )
+  end
+
+  def self_hosting(conn, _params) do
+    render(
+      conn,
+      "layout.html",
+      view: "self_hosting.html",
+      view_name: :self_hosting,
+      title: "Self-hosting",
       container: "container page docs"
     )
   end

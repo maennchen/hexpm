@@ -14,7 +14,7 @@ defmodule HexpmWeb.Dashboard.KeyController do
       {:ok, _struct} ->
         conn
         |> put_flash(:info, "The key #{name} was revoked successfully.")
-        |> redirect(to: Routes.key_path(conn, :index))
+        |> redirect(to: ~p"/dashboard/keys")
 
       {:error, _} ->
         conn
@@ -36,7 +36,7 @@ defmodule HexpmWeb.Dashboard.KeyController do
 
         conn
         |> put_flash(:info, flash)
-        |> redirect(to: Routes.key_path(conn, :index))
+        |> redirect(to: ~p"/dashboard/keys")
 
       {:error, :key, changeset, _} ->
         conn
@@ -46,9 +46,10 @@ defmodule HexpmWeb.Dashboard.KeyController do
   end
 
   defp render_index(conn, changeset \\ changeset()) do
-    user = conn.assigns.current_user
+    user = Hexpm.Repo.preload(conn.assigns.current_user, :owned_packages)
     keys = Keys.all(user)
     organizations = Organizations.all_by_user(user)
+    packages = Enum.filter(user.owned_packages, &(&1.repository_id == 1))
 
     render(
       conn,
@@ -57,8 +58,9 @@ defmodule HexpmWeb.Dashboard.KeyController do
       container: "container page dashboard",
       keys: keys,
       organizations: organizations,
-      delete_key_path: Routes.key_path(Endpoint, :delete),
-      create_key_path: Routes.key_path(Endpoint, :create),
+      packages: packages,
+      delete_key_path: ~p"/dashboard/keys",
+      create_key_path: ~p"/dashboard/keys",
       key_changeset: changeset
     )
   end
@@ -97,6 +99,9 @@ defmodule HexpmWeb.Dashboard.KeyController do
 
         {"repository", resources} ->
           Enum.map(Map.keys(resources), &%{"domain" => "repository", "resource" => &1})
+
+        {"package", resources} ->
+          Enum.map(Map.keys(resources), &%{"domain" => "package", "resource" => &1})
       end)
 
     put_in(params["permissions"], permissions)

@@ -16,7 +16,7 @@
 
           <%= for audit_log <- @audit_logs do %>
             <tr>
-              <td class="col-sm-3"><%= ViewHelpers.pretty_date(audit_log.inserted_at, :short) %></td>
+              <td class="col-sm-3" title="<%= ViewHelpers.pretty_datetime(audit_log.inserted_at) %>"><%= ViewHelpers.pretty_date(audit_log.inserted_at, :short) %></td>
               <td><%= humanize_audit_log_info(audit_log) %></td>
             </tr>
           <% end %>
@@ -31,7 +31,7 @@
                per_page: @per_page,
                unit: "activity",
                units: "activities",
-               path_fn: &Routes.audit_log_path(Endpoint, :index, page: &1)
+               path_fn: &~p"/dashboard/audit-logs?page=#{&1}"
         %>
       </div>
     </div>

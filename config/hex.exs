@@ -6,6 +6,7 @@ config :hexpm,
   user_confirm: false,
   docs_url: "http://localhost:4043",
   diff_url: "http://localhost:4004",
+  preview_url: "http://localhost:4005",
   cdn_url: "http://localhost:4043"
 
 config :hexpm, HexpmWeb.Endpoint,
@@ -22,5 +23,3 @@ config :hexpm, Hexpm.RepoBase,
 config :hexpm, Hexpm.Emails.Mailer, adapter: Bamboo.LocalAdapter
 
 config :logger, level: :error
-
-config :goth, config: %{"project_id" => "hexpm"}

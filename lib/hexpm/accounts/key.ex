@@ -35,6 +35,7 @@ defmodule Hexpm.Accounts.Key do
     |> validate_required(~w(name)a)
     |> add_keys()
     |> prepare_changes(&unique_name/1)
+    |> unique_constraint(:name, name: "_name_revoked_at_key", match: :suffix)
     |> cast_embed(:permissions, with: &KeyPermission.changeset(&1, user_or_organization, &2))
     |> put_default_embed(:permissions, [%KeyPermission{domain: "api"}])
   end
@@ -132,7 +133,7 @@ defmodule Hexpm.Accounts.Key do
     app_secret = Application.get_env(:hexpm, :secret)
 
     <<first::binary-size(32), second::binary-size(32)>> =
-      :crypto.hmac(:sha256, app_secret, user_secret)
+      :crypto.mac(:hmac, :sha256, app_secret, user_secret)
       |> Base.encode16(case: :lower)
 
     {user_secret, first, second}
@@ -168,50 +169,67 @@ defmodule Hexpm.Accounts.Key do
         s in source,
         join: k in assoc(s, :keys),
         where: not query_revoked(k),
+        where: k.name == ^name or like(k.name, ^(name <> "-%")),
         select: k.name
       )
       |> changeset.repo.all
-      |> Enum.into(MapSet.new())
 
-    name = if MapSet.member?(names, name), do: find_unique_name(name, names), else: name
+    name = if name in names, do: find_unique_name(name, names), else: name
 
     put_change(changeset, :name, name)
   end
 
-  defp find_unique_name(name, names, counter \\ 2) do
-    name_counter = "#{name}-#{counter}"
+  defp find_unique_name(name, names) do
+    max =
+      names
+      |> Enum.flat_map(fn existing_name ->
+        case Integer.parse(String.trim_leading(existing_name, name <> "-")) do
+          {num, ""} -> [num]
+          _ -> []
+        end
+      end)
+      |> Enum.max(&>=/2, fn -> 1 end)
 
-    if MapSet.member?(names, name_counter) do
-      find_unique_name(name, names, counter + 1)
-    else
-      name_counter
-    end
+    "#{name}-#{max + 1}"
   end
 
-  def verify_permissions?(key, "api", resource) do
+  def verify_permissions?(%Key{} = key, "api", resource)
+      when is_binary(resource) or is_nil(resource) do
     Enum.any?(key.permissions, fn permission ->
-      permission.domain == "api" and match_api_resource?(permission.resource, resource)
+      # permission "package" implies "api:read"
+      (permission.domain == "api" and match_api_resource?(permission.resource, resource)) or
+        (permission.domain == "package" and match_api_resource?("read", resource))
     end)
   end
 
-  def verify_permissions?(key, "repositories", _resource) do
+  def verify_permissions?(%Key{} = key, "package", %Package{} = resource) do
+    Enum.any?(key.permissions, fn permission ->
+      [organization, package] = String.split(permission.resource, "/")
+
+      permission.domain == "package" and
+        organization == resource.repository.name and
+        resource.name == package
+    end)
+  end
+
+  def verify_permissions?(%Key{} = key, "repositories", nil) do
     Enum.any?(key.permissions, &(&1.domain == "repositories"))
   end
 
-  def verify_permissions?(key, "repository", resource) do
+  def verify_permissions?(%Key{} = key, "repository", resource) when is_binary(resource) do
     Enum.any?(key.permissions, fn permission ->
       (permission.domain == "repository" and permission.resource == resource) or
         permission.domain == "repositories"
     end)
   end
 
-  def verify_permissions?(key, "docs", resource) do
+  def verify_permissions?(%Key{} = key, "docs", resource) when is_binary(resource) do
     Enum.any?(key.permissions, fn permission ->
       permission.domain == "docs" and permission.resource == resource
     end)
   end
 
-  def verify_permissions?(_key, nil, _resource) do
+  def verify_permissions?(%Key{} = _key, _domain, _resource) do
     false
   end
 

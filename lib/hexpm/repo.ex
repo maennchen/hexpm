@@ -1,14 +1,18 @@
 defmodule Hexpm.RepoHelpers do
-  defmacro defwrite(fun) do
-    # Please don't yell at me =(
-    {name, args, as, as_args} = Kernel.Utils.defdelegate(fun, to: RepoBase)
-
+  defmacro defwrite({name, _meta, params}) do
     quote do
-      def unquote(name)(unquote_splicing(args)) do
+      def unquote(name)(unquote_splicing(params)) do
         write_mode!()
-        Hexpm.RepoBase.unquote(as)(unquote_splicing(as_args))
+        Hexpm.RepoBase.unquote(name)(unquote_splicing(params_to_args(params)))
       end
     end
+  end
+
+  defp params_to_args(params) do
+    Enum.map(params, fn
+      {:\\, _meta, [arg, _default]} -> arg
+      arg -> arg
+    end)
   end
 end
 
@@ -16,7 +20,8 @@ defmodule Hexpm.Repo do
   import Hexpm.RepoHelpers
   alias Hexpm.RepoBase
 
-  defdelegate aggregate(queryable, aggregate, field, opts \\ []), to: RepoBase
+  defdelegate aggregate(queryable, aggregate, opts \\ []), to: RepoBase
+  defdelegate aggregate(queryable, aggregate, field, opts), to: RepoBase
   defdelegate all(queryable, opts \\ []), to: RepoBase
   defdelegate get_by!(queryable, clauses, opts \\ []), to: RepoBase
   defdelegate get_by(queryable, clauses, opts \\ []), to: RepoBase
@@ -38,7 +43,7 @@ defmodule Hexpm.Repo do
   defwrite(insert(struct_or_changeset, opts \\ []))
   defwrite(query!(sql, params \\ [], opts \\ []))
   defwrite(query(sql, params \\ [], opts \\ []))
-  defwrite(refresh_view(schema))
+  defwrite(refresh_view(schema, opts \\ []))
   defwrite(rollback(value))
   defwrite(transaction(fun_or_multi, opts \\ []))
   defwrite(update_all(queryable, opts \\ []))
@@ -88,7 +93,7 @@ defmodule Hexpm.RepoBase do
         |> Keyword.put(:url, url)
         |> Keyword.put(:pool_size, pool_size)
 
-      {:ok, Keyword.put(opts, :url, url)}
+      {:ok, opts}
     else
       {:ok, opts}
     end
@@ -104,11 +109,18 @@ defmodule Hexpm.RepoBase do
     {:RSAPrivateKey, key}
   end
 
-  def refresh_view(schema) do
-    source = schema.__schema__(:source)
-    query = ~s(REFRESH MATERIALIZED VIEW CONCURRENTLY "#{source}")
+  def refresh_view(schema, opts \\ [])
 
-    {:ok, _} = Hexpm.Repo.query(query, [])
+  def refresh_view(schema, opts) when is_atom(schema) do
+    source = schema.__schema__(:source)
+    refresh_view(source, opts)
+  end
+
+  def refresh_view(source, opts) when is_binary(source) do
+    concurrently = if Keyword.get(opts, :concurrently, true), do: "CONCURRENTLY"
+    query = ~s(REFRESH MATERIALIZED VIEW #{concurrently} "#{source}")
+
+    {:ok, _} = Hexpm.Repo.query(query, [], opts)
     :ok
   end
 

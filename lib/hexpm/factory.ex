@@ -28,7 +28,7 @@ defmodule Hexpm.Factory do
     {user_secret, first, second} = Hexpm.Accounts.Key.gen_key()
 
     %Hexpm.Accounts.Key{
-      name: Fake.random(:username),
+      name: "#{Fake.random(:username)}-#{:erlang.unique_integer()}",
       secret_first: first,
       secret_second: second,
       user_secret: user_secret,
@@ -52,7 +52,8 @@ defmodule Hexpm.Factory do
     %Hexpm.Accounts.Organization{
       name: name,
       user: build(:user, username: name),
-      billing_active: true
+      billing_active: true,
+      trial_end: ~U[2020-01-01T00:00:00Z]
     }
   end
 
@@ -68,7 +69,6 @@ defmodule Hexpm.Factory do
 
     %Hexpm.Repository.Repository{
       name: name,
-      public: false,
       organization: build(:organization, name: name, user: build(:user, username: name))
     }
   end

@@ -4,11 +4,21 @@ defmodule Hexpm.Repository.ReleaseTest do
   alias Hexpm.Repository.Release
 
   setup do
-    packages =
+    publisher = insert(:user)
+
+    [_, _, package3] =
+      packages =
       insert_list(3, :package)
       |> Hexpm.Repo.preload(:repository)
 
-    publisher = insert(:user)
+    Release.build(
+      package3,
+      publisher,
+      rel_meta(%{version: "0.0.1-dev", app: package3.name}),
+      "",
+      ""
+    )
+    |> Hexpm.Repo.insert!()
 
     %{publisher: publisher, packages: packages}
   end
@@ -426,19 +436,6 @@ defmodule Hexpm.Repository.ReleaseTest do
 
     assert %{meta: %{files: "package can't be empty"}} =
              Release.build(package3, publisher, %{"meta" => meta}, "", "") |> errors_on()
-
-    # Disabled because of resolver bug
-    # reqs = [%{name: package3.name, app: package3.name, requirement: "~> 1.0", optional: false}]
-
-    # assert %{requirements: "Failed to use" <> _} =
-    #          Release.build(
-    #            package2,
-    #            publisher,
-    #            rel_meta(%{version: "0.1.1", app: package2.name, requirements: reqs}),
-    #            "",
-    #            ""
-    #          )
-    #          |> errors_on()
   end
 
   test "ensure unique build tools", %{publisher: publisher, packages: [_, _, package3]} do
@@ -546,50 +543,6 @@ defmodule Hexpm.Repository.ReleaseTest do
     assert [version: {"is invalid SemVer", _}] = changeset.errors
   end
 
-  @tag :skip
-  test "do not allow pre-release dependencies of stable releases", %{
-    publisher: publisher,
-    packages: [_, package2, package3]
-  } do
-    Release.build(
-      package3,
-      publisher,
-      rel_meta(%{version: "0.0.1-dev", app: package3.name}),
-      "",
-      ""
-    )
-    |> Hexpm.Repo.insert!()
-
-    reqs = [
-      %{name: package3.name, app: package3.name, requirement: "~> 0.0.1-alpha", optional: false}
-    ]
-
-    assert {:error, changeset} =
-             Release.build(
-               package2,
-               publisher,
-               rel_meta(%{version: "0.0.1", app: package2.name, requirements: reqs}),
-               "",
-               ""
-             )
-             |> Hexpm.Repo.insert()
-
-    assert [
-             requirement:
-               {"invalid requirement: \"~> 0.0.1-alpha\", unstable requirements are not allowed for stable releases",
-                []}
-           ] = hd(changeset.changes.requirements).errors
-
-    Release.build(
-      package2,
-      publisher,
-      rel_meta(%{version: "0.0.1-dev", app: package2.name, requirements: reqs}),
-      "",
-      ""
-    )
-    |> Hexpm.Repo.insert!()
-  end
-
   test "delete release", %{publisher: publisher, packages: [_, package2, package3]} do
     release =
       Release.build(
@@ -604,5 +557,41 @@ defmodule Hexpm.Repository.ReleaseTest do
 
     Release.delete(release) |> Hexpm.Repo.delete!()
     refute Hexpm.Repo.get_by(assoc(package2, :releases), version: "0.0.1")
+  end
+
+  test "latest_version" do
+    package = insert(:package)
+
+    insert(
+      :release,
+      package: package,
+      version: "0.0.1",
+      meta: build(:release_metadata, app: package.name),
+      has_docs: true
+    )
+
+    insert(
+      :release,
+      package: package,
+      version: "0.0.2",
+      meta: build(:release_metadata, app: package.name),
+      has_docs: false
+    )
+
+    insert(
+      :release,
+      package: package,
+      version: %Version{major: 0, minor: 0, patch: 3, pre: ["dev", 0, 1]},
+      meta: build(:release_metadata, app: package.name),
+      has_docs: true
+    )
+
+    assert %Release{version: %Version{major: 0, minor: 0, patch: 2}} =
+             Release.all(package) |> Hexpm.Repo.all() |> Release.latest_version(only_stable: true)
+
+    assert %Release{version: %Version{major: 0, minor: 0, patch: 1}} =
+             Release.all(package)
+             |> Hexpm.Repo.all()
+             |> Release.latest_version(only_stable: true, with_docs: true)
   end
 end

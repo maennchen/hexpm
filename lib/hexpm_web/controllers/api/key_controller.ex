@@ -5,19 +5,26 @@ defmodule HexpmWeb.API.KeyController do
 
   plug :authorize,
        [
-         domain: "api",
-         resource: "write",
+         domains: [{"api", "write"}],
          allow_unconfirmed: true,
-         fun: &maybe_organization_access_write/2
+         fun: {AuthHelpers, :organization_access, [organization_role: "write"]}
        ]
        when action == :create
 
   plug :authorize,
-       [domain: "api", resource: "write", fun: &maybe_organization_access_write/2]
+       [
+         domains: [{"api", "write"}],
+         fun: {AuthHelpers, :organization_access, [organization_role: "write"]},
+         authentication: :required
+       ]
        when action in [:delete, :delete_all]
 
   plug :authorize,
-       [domain: "api", resource: "read", fun: &maybe_organization_access/2]
+       [
+         domains: [{"api", "read"}],
+         authentication: :required,
+         fun: {AuthHelpers, :organization_access}
+       ]
        when action in [:index, :show]
 
   plug :require_organization_path
@@ -54,7 +61,7 @@ defmodule HexpmWeb.API.KeyController do
 
     case Keys.create(user_or_organization, params, audit: audit_data(conn)) do
       {:ok, %{key: key}} ->
-        location = Routes.api_key_url(conn, :show, params["name"])
+        location = ~p"/api/keys/#{key}"
 
         conn
         |> put_resp_header("location", location)

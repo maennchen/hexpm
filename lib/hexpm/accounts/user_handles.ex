@@ -20,7 +20,7 @@ defmodule Hexpm.Accounts.UserHandles do
       {:twitter, "Twitter", "https://twitter.com/{handle}"},
       {:github, "GitHub", "https://github.com/{handle}"},
       {:elixirforum, "Elixir Forum", "https://elixirforum.com/u/{handle}"},
-      {:freenode, "Freenode", "irc://chat.freenode.net/elixir-lang"},
+      {:freenode, "Libera", "irc://irc.libera.chat/elixir"},
       {:slack, "Slack", "https://elixir-slackin.herokuapp.com/"}
     ]
   end
@@ -31,8 +31,9 @@ defmodule Hexpm.Accounts.UserHandles do
 
   def render(user) do
     Enum.flat_map(services(), fn {field, service, url} ->
-      if handle = Map.get(user.handles, field) do
-        handle = UserHandles.handle(service, handle)
+      handle = Map.get(user.handles, field)
+
+      if handle = handle && handle(field, handle) do
         full_url = String.replace(url, "{handle}", handle)
         [{service, handle, full_url}]
       else
@@ -49,14 +50,19 @@ defmodule Hexpm.Accounts.UserHandles do
   defp unuri(handle, host, path) do
     uri = URI.parse(handle)
     http? = uri.scheme in ["http", "https"]
-    host? = String.contains?(uri.host, host)
-    path? = String.starts_with?(uri.path, path)
+    host? = String.contains?(uri.host || "", host)
+    path? = String.starts_with?(uri.path || "", path)
 
-    if http? and host? and path? do
-      {_, handle} = String.split_at(uri.path, String.length(path))
-      handle
-    else
-      uri.path
+    cond do
+      http? and host? and path? ->
+        {_, handle} = String.split_at(uri.path, String.length(path))
+        handle
+
+      uri.path ->
+        String.replace(uri.path, host <> path, "")
+
+      true ->
+        nil
     end
   end
 end

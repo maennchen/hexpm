@@ -2,14 +2,12 @@ defmodule HexpmWeb.MarkdownEngine do
   @behaviour Phoenix.Template.Engine
 
   def compile(path, _name) do
-    html =
-      path
-      |> File.read!()
-      |> Earmark.as_html!(%Earmark.Options{gfm: true})
-      |> header_anchors("h3")
-      |> header_anchors("h4")
-
-    {:safe, html}
+    path
+    |> File.read!()
+    |> Earmark.as_html!(%Earmark.Options{gfm: true})
+    |> header_anchors("h3")
+    |> header_anchors("h4")
+    |> Phoenix.HTML.raw()
   end
 
   defp header_anchors(html, tag) do
@@ -17,7 +15,7 @@ defmodule HexpmWeb.MarkdownEngine do
       HexpmWeb.ViewIcons.icon(:glyphicon, :link, class: "icon-link")
       |> Phoenix.HTML.safe_to_string()
 
-    Regex.replace(~r"<#{tag}>(.*)</#{tag}>", html, fn _, header ->
+    Regex.replace(~r"<#{tag}>\n?(.*)<\/#{tag}>", html, fn _, header ->
       anchor =
         header
         |> String.downcase()

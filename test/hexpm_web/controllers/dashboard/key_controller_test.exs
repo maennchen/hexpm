@@ -12,14 +12,14 @@ defmodule HexpmWeb.Dashboard.KeyControllerTest do
       conn =
         build_conn()
         |> test_login(c.user)
-        |> get("dashboard/keys")
+        |> get("/dashboard/keys")
 
       assert response(conn, 200) =~ "Keys"
     end
 
     test "requires login" do
-      conn = get(build_conn(), "dashboard/keys")
-      assert redirected_to(conn) == "/login?return=dashboard%2Fkeys"
+      conn = get(build_conn(), "/dashboard/keys")
+      assert redirected_to(conn) == "/login?return=%2Fdashboard%2Fkeys"
     end
   end
 
@@ -28,10 +28,12 @@ defmodule HexpmWeb.Dashboard.KeyControllerTest do
       conn =
         build_conn()
         |> test_login(c.user)
-        |> post("dashboard/keys", %{key: %{name: "computer"}})
+        |> post("/dashboard/keys", %{key: %{name: "computer"}})
 
       assert redirected_to(conn) == "/dashboard/keys"
-      assert get_flash(conn, :info) =~ "The key computer was successfully generated"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~
+               "The key computer was successfully generated"
     end
   end
 
@@ -42,10 +44,12 @@ defmodule HexpmWeb.Dashboard.KeyControllerTest do
       conn =
         build_conn()
         |> test_login(c.user)
-        |> delete("dashboard/keys", %{name: "computer"})
+        |> delete("/dashboard/keys", %{name: "computer"})
 
       assert redirected_to(conn) == "/dashboard/keys"
-      assert get_flash(conn, :info) =~ "The key computer was revoked successfully"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~
+               "The key computer was revoked successfully"
     end
 
     test "revoking an already revoked key throws an error", c do
@@ -54,7 +58,7 @@ defmodule HexpmWeb.Dashboard.KeyControllerTest do
       conn =
         build_conn()
         |> test_login(c.user)
-        |> delete("dashboard/keys", %{name: "computer"})
+        |> delete("/dashboard/keys", %{name: "computer"})
 
       assert response(conn, 400) =~ "The key computer was not found"
     end

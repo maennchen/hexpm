@@ -16,28 +16,19 @@ defmodule Hexpm.Repository.Owners do
   def add(package, user, params, audit: audit_data) do
     repository = package.repository
     owners = all(package, user: [:emails, :organization])
-    organization_owner = Enum.find(owners, &User.organization?(&1.user))
     repository_access = Organizations.access?(repository.organization, user, "read")
-    owner_organization = organization_owner && organization_owner.user.organization
-
-    organization_access =
-      owner_organization && Organizations.access?(owner_organization, user, "read")
 
     cond do
-      !repository.public && !repository_access ->
+      repository.id != 1 and not repository_access ->
         {:error, :not_member}
 
-      # Outside collaborators are not allowed at this time
-      owner_organization && !organization_access ->
-        {:error, :not_member}
-
-      User.organization?(user) && Map.get(params, "transfer", false) != true ->
+      User.organization?(user) and Map.get(params, "transfer", false) != true ->
         {:error, :not_organization_transfer}
 
-      User.organization?(user) && Map.get(params, "level", "full") != "full" ->
+      User.organization?(user) and Map.get(params, "level", "full") != "full" ->
         {:error, :organization_level}
 
-      !User.organization?(user) && Organizations.get(user.username) ->
+      not User.organization?(user) && Organizations.get(user.username) ->
         {:error, :organization_user_conflict}
 
       true ->
@@ -68,7 +59,7 @@ defmodule Hexpm.Repository.Owners do
           |> Repo.preload(organization: [organization_users: [user: :emails]])
 
         Emails.owner_added(package, owners, user)
-        |> Mailer.deliver_now_throttled()
+        |> Mailer.deliver_later!()
 
         {:ok, %{owner | user: user}}
 
@@ -107,7 +98,7 @@ defmodule Hexpm.Repository.Owners do
       !owner ->
         {:error, :not_owner}
 
-      length(owners) == 1 and package.repository.public ->
+      length(owners) == 1 and package.repository.id == 1 ->
         {:error, :last_owner}
 
       true ->
@@ -127,7 +118,7 @@ defmodule Hexpm.Repository.Owners do
           |> Repo.preload(organization: [users: :emails])
 
         Emails.owner_removed(package, owners, owner.user)
-        |> Mailer.deliver_now_throttled()
+        |> Mailer.deliver_later!()
 
         :ok
     end

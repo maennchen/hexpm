@@ -1,5 +1,5 @@
 defmodule Hexpm.TestHelpers do
-  @tmp Application.get_env(:hexpm, :tmp_dir)
+  @tmp Application.compile_env(:hexpm, :tmp_dir)
 
   def create_tar(meta, files \\ [{"mix.exs", "mix.exs"}]) do
     meta =
@@ -20,10 +20,10 @@ defmodule Hexpm.TestHelpers do
     checksum = :crypto.hash(:sha256, blob) |> Base.encode16()
 
     files = [
-      {'VERSION', "3"},
-      {'CHECKSUM', checksum},
-      {'metadata.config', meta_string},
-      {'contents.tar.gz', contents}
+      {~c"VERSION", "3"},
+      {~c"CHECKSUM", checksum},
+      {~c"metadata.config", meta_string},
+      {~c"contents.tar.gz", contents}
     ]
 
     path = Path.join(@tmp, "#{meta[:name]}-#{meta[:version]}.tar")
@@ -72,5 +72,62 @@ defmodule Hexpm.TestHelpers do
       |> Map.put_new("optional", false)
       |> Map.put_new("app", req["name"])
     end)
+  end
+
+  def app_env(app, key, value) do
+    original_env = Application.get_env(app, key)
+    Application.put_env(app, key, value)
+
+    ExUnit.Callbacks.on_exit(fn ->
+      Application.put_env(app, key, original_env)
+    end)
+  end
+
+  def key_for(user_or_organization, permissions \\ [%{domain: "api"}]) do
+    {:ok, %{key: key}} =
+      Hexpm.Accounts.Keys.create(
+        user_or_organization,
+        %{name: "any_key_name", permissions: permissions},
+        audit: nil
+      )
+
+    key.user_secret
+  end
+
+  def read_fixture(path) do
+    Path.join([__DIR__, "..", "fixtures", path])
+    |> File.read!()
+  end
+
+  def audit_data(user, opts \\ [])
+
+  def audit_data(%Hexpm.Accounts.Organization{user: user}, opts) do
+    audit_data(user, opts)
+  end
+
+  def audit_data(%Hexpm.Accounts.User{} = user, opts) do
+    %{
+      user: user,
+      key: Keyword.get(opts, :key),
+      user_agent: Keyword.get(opts, :user_agent, "TEST"),
+      remote_ip: Keyword.get(opts, :remote_ip, "127.0.0.1")
+    }
+  end
+
+  def default_meta(name, version) do
+    %{
+      "name" => name,
+      "description" => "description",
+      "licenses" => [],
+      "version" => version,
+      "requirements" => [],
+      "app" => name,
+      "build_tools" => ["mix"],
+      "files" => ["mix.exs"]
+    }
+  end
+
+  def default_requirement(name, requirement) do
+    %{"name" => name, "app" => name, "requirement" => requirement, "optional" => false}
   end
 end

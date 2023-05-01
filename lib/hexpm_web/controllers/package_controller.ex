@@ -3,7 +3,7 @@ defmodule HexpmWeb.PackageController do
 
   @packages_per_page 30
   @audit_logs_per_page 10
-  @sort_params ~w(name recent_downloads total_downloads inserted_at updated_at recently_published)
+  @sort_params ~w(name recent_downloads total_downloads inserted_at updated_at)
   @letters for letter <- ?A..?Z, do: <<letter>>
 
   def index(conn, params) do
@@ -29,7 +29,7 @@ defmodule HexpmWeb.PackageController do
     package_count = Packages.count(repositories, filter)
     page = Hexpm.Utils.safe_page(page_param, package_count, @packages_per_page)
     packages = fetch_packages(repositories, page, @packages_per_page, filter, sort)
-    downloads = Packages.packages_downloads_with_all_views(packages)
+    downloads = Downloads.packages_all_views(packages)
     exact_match = exact_match(repositories, search)
 
     render(
@@ -119,7 +119,12 @@ defmodule HexpmWeb.PackageController do
     repository = package.repository
     release = Releases.preload(release, [:requirements, :downloads, :publisher])
 
-    latest_release_with_docs = Enum.find(releases, & &1.has_docs)
+    latest_release_with_docs =
+      Release.latest_version(releases,
+        only_stable: true,
+        unstable_fallback: true,
+        with_docs: true
+      )
 
     docs_assigns =
       cond do
@@ -140,24 +145,25 @@ defmodule HexpmWeb.PackageController do
           [docs_html_url: nil, docs_tarball_url: nil]
       end
 
-    downloads = Packages.package_downloads(package)
+    last_download_day = Downloads.last_day() || Date.utc_today()
+    start_download_day = Date.add(last_download_day, -30)
+    downloads = Downloads.package(package)
 
     graph_downloads =
       case type do
-        :package -> Enum.map(releases, & &1.id) |> Releases.downloads_for_last_n_days(31)
-        :release -> release.id |> Releases.downloads_for_last_n_days(31)
+        :package -> Downloads.since_date(package, start_download_day)
+        :release -> Downloads.since_date(release, start_download_day)
       end
 
+    graph_downloads = Map.new(graph_downloads, &{Date.from_iso8601!(&1.day), &1})
+
     daily_graph =
-      Date.utc_today()
-      |> Date.add(-31)
-      |> Date.range(Date.add(Date.utc_today(), -1))
-      |> Enum.map(fn date ->
-        Enum.find(graph_downloads, fn dl -> date == Date.from_iso8601!(dl.day) end)
-      end)
-      |> Enum.map(fn
-        nil -> 0
-        %{downloads: dl} -> dl
+      Enum.map(Date.range(start_download_day, last_download_day), fn day ->
+        if download = graph_downloads[day] do
+          download.downloads
+        else
+          0
+        end
       end)
 
     owners = Owners.all(package, user: [:emails, :organization])
@@ -183,7 +189,7 @@ defmodule HexpmWeb.PackageController do
         title: package.name,
         description: package.meta.description,
         container: "container package-view",
-        canonical_url: Routes.package_url(conn, :show, package),
+        canonical_url: ~p"/packages/#{package}",
         package: package,
         repository_name: repository.name,
         releases: releases,
@@ -200,8 +206,9 @@ defmodule HexpmWeb.PackageController do
   end
 
   defp fetch_packages(repositories, page, packages_per_page, search, sort) do
-    packages = Packages.search(repositories, page, packages_per_page, search, sort, nil)
-    Packages.attach_versions(packages)
+    repositories
+    |> Packages.search(page, packages_per_page, search, sort, nil)
+    |> Packages.attach_latest_releases()
   end
 
   defp exact_match(_organizations, nil) do
@@ -209,15 +216,18 @@ defmodule HexpmWeb.PackageController do
   end
 
   defp exact_match(repositories, search) do
-    case String.split(search, "/", parts: 2) do
+    search
+    |> String.replace(" ", "_")
+    |> String.split("/", parts: 2)
+    |> case do
       [repository, package] ->
         if repository in Enum.map(repositories, & &1.name) do
           Packages.get(repository, package)
         end
 
-      _ ->
+      [term] ->
         try do
-          Packages.get(repositories, search)
+          Packages.get(repositories, term)
         rescue
           Ecto.MultipleResultsError ->
             nil

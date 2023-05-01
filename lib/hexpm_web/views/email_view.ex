@@ -86,10 +86,19 @@ defmodule HexpmWeb.EmailView do
   end
 
   defmodule PackagePublished do
-    def intro(package, version) do
+    def intro(nil, package, version) do
       """
-      You have recently published package #{package} v#{version}.
-      If this wasn't done by you, you should reset your account and revert or retire the version.
+      Package #{package} v#{version} was recently published.
+      If this wasn't done by you or one of the other package owners, you should
+      reset your account and revert or retire the version.
+      """
+    end
+
+    def intro(publisher, package, version) do
+      """
+      Package #{package} v#{version} was recently published by #{publisher.username}.
+      If this wasn't done by you or one of the other package owners, you should
+      reset your account and revert or retire the version.
       """
     end
 
@@ -105,7 +114,7 @@ defmodule HexpmWeb.EmailView do
       """
       cd #{package}; rebar3 hex publish --revert #{version}
       # or
-      rebar3 hex retire --pkg #{package} --vsn #{version} --reason security --message "Not published by owners"
+      rebar3 hex retire #{package} #{version} security --message "Not published by owners"
       """
     end
   end

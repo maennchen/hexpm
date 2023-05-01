@@ -30,6 +30,11 @@ defmodule Hexpm.Accounts.Users do
   end
 
   def get_email(email, preload \\ []) do
+    Repo.get_by(Email, email: String.downcase(email), verified: true)
+    |> Repo.preload(preload)
+  end
+
+  def get_maybe_unverified_email(email, preload \\ []) do
     Repo.get_by(Email, email: String.downcase(email))
     |> Repo.preload(preload)
   end
@@ -58,7 +63,7 @@ defmodule Hexpm.Accounts.Users do
     case Repo.transaction(multi) do
       {:ok, %{user: %{emails: [email]} = user}} ->
         Emails.verification(user, email)
-        |> Mailer.deliver_now_throttled()
+        |> Mailer.deliver_later!()
 
         {:ok, user}
 
@@ -71,13 +76,17 @@ defmodule Hexpm.Accounts.Users do
     email
   end
 
-  def email_verification(user, email) do
+  def email_verification(%User{}, %Email{verified: true} = email) do
+    email
+  end
+
+  def email_verification(%User{} = user, %Email{} = email) do
     email =
       Email.verification(email)
       |> Repo.update!()
 
     Emails.verification(user, email)
-    |> Mailer.deliver_now_throttled()
+    |> Mailer.deliver_later!()
 
     email
   end
@@ -153,7 +162,7 @@ defmodule Hexpm.Accounts.Users do
       {:ok, %{user: user}} ->
         user
         |> Emails.password_changed()
-        |> Mailer.deliver_now_throttled()
+        |> Mailer.deliver_later!()
 
         {:ok, user}
 
@@ -250,7 +259,7 @@ defmodule Hexpm.Accounts.Users do
         |> Repo.transaction()
 
       Emails.password_reset_request(user, reset)
-      |> Mailer.deliver_now_throttled()
+      |> Mailer.deliver_later!()
 
       :ok
     else
@@ -307,7 +316,7 @@ defmodule Hexpm.Accounts.Users do
         user = Repo.preload(user, :emails, force: true)
 
         Emails.verification(user, email)
-        |> Mailer.deliver_now_throttled()
+        |> Mailer.deliver_later!()
 
         {:ok, user}
 
@@ -506,7 +515,7 @@ defmodule Hexpm.Accounts.Users do
 
       true ->
         Emails.verification(user, email)
-        |> Mailer.deliver_now_throttled()
+        |> Mailer.deliver_later!()
 
         :ok
     end

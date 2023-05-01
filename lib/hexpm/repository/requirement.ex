@@ -17,65 +17,29 @@ defmodule Hexpm.Repository.Requirement do
     belongs_to :dependency, Package
   end
 
-  def changeset(requirement, params, dependencies, release_changeset, package) do
+  def changeset(requirement, params, dependencies, package) do
+    repository = params["repository"] || "hexpm"
+
     cast(requirement, params, ~w(repository name app requirement optional)a)
-    |> put_assoc(:dependency, dependencies[{params["repository"] || "hexpm", params["name"]}])
+    |> put_assoc(:dependency, dependencies[{repository, params["name"]}])
     |> validate_required(~w(name app requirement optional)a)
     |> validate_required(
       :dependency,
-      message: "package does not exist in repository \"#{params["repository"] || "hexpm"}\""
+      message: "package does not exist in repository \"#{repository}\""
     )
-    |> validate_requirement(:requirement, pre: version_pre(release_changeset) != [])
+    |> validate_requirement(:requirement)
     |> validate_repository(:repository, repository: package.repository)
   end
 
   def build_all(release_changeset, package) do
     dependencies = preload_dependencies(release_changeset.params["requirements"])
 
-    release_changeset =
-      cast_assoc(
-        release_changeset,
-        :requirements,
-        with: &changeset(&1, &2, dependencies, release_changeset, package)
-      )
-
-    if release_changeset.valid? do
-      requirements =
-        get_change(release_changeset, :requirements, [])
-        |> Enum.map(&apply_changes/1)
-
-      validate_resolver(release_changeset, requirements)
-    else
-      release_changeset
-    end
+    cast_assoc(
+      release_changeset,
+      :requirements,
+      with: &changeset(&1, &2, dependencies, package)
+    )
   end
-
-  defp validate_resolver(release_changeset, _requirements) do
-    release_changeset
-  end
-
-  # Disabled because of bug
-  # defp validate_resolver(%{valid?: true} = release_changeset, requirements) do
-  #   build_tools = get_field(release_changeset, :meta).build_tools
-  #
-  #   {time, release_changeset} =
-  #     :timer.tc(fn ->
-  #       case Resolver.run(requirements, build_tools) do
-  #         :ok ->
-  #           release_changeset
-  #
-  #         {:error, reason} ->
-  #           add_error(release_changeset, :requirements, reason)
-  #       end
-  #     end)
-  #
-  #   Logger.warn("DEPENDENCY_RESOLUTION_COMPLETED (#{div(time, 1000)}ms)")
-  #   release_changeset
-  # end
-  #
-  # defp validate_resolver(%{valid?: false} = release_changeset, _requirements) do
-  #   release_changeset
-  # end
 
   defp preload_dependencies(requirements) do
     names = requirement_names(requirements)
@@ -120,9 +84,4 @@ defmodule Hexpm.Repository.Requirement do
   end
 
   defp requirement_names(_requirements), do: []
-
-  defp version_pre(release_changeset) do
-    version = get_field(release_changeset, :version)
-    version && version.pre
-  end
 end

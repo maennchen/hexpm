@@ -16,7 +16,7 @@ defmodule HexpmWeb.API.DocsControllerTest do
       insert(:release, package: package, version: "0.0.1", has_docs: false)
 
       build_conn()
-      |> get("api/packages/#{package.name}/releases/0.0.1/docs")
+      |> get("/api/packages/#{package.name}/releases/0.0.1/docs")
       |> response(404)
     end
 
@@ -24,7 +24,7 @@ defmodule HexpmWeb.API.DocsControllerTest do
       package = insert(:package)
       insert(:release, package: package, version: "0.0.1", has_docs: true)
 
-      conn = get(build_conn(), "api/packages/#{package.name}/releases/0.0.1/docs")
+      conn = get(build_conn(), "/api/packages/#{package.name}/releases/0.0.1/docs")
       assert redirected_to(conn) =~ "/docs/#{package.name}-0.0.1.tar.gz"
     end
   end
@@ -36,13 +36,13 @@ defmodule HexpmWeb.API.DocsControllerTest do
       insert(:release, package: package, version: "0.0.1", has_docs: true)
 
       build_conn()
-      |> get("api/repos/#{repository.name}/packages/#{package.name}/releases/0.0.1/docs")
-      |> response(403)
+      |> get("/api/repos/#{repository.name}/packages/#{package.name}/releases/0.0.1/docs")
+      |> response(404)
 
       build_conn()
       |> put_req_header("authorization", key_for(user))
-      |> get("api/repos/#{repository.name}/packages/#{package.name}/releases/0.0.1/docs")
-      |> response(403)
+      |> get("/api/repos/#{repository.name}/packages/#{package.name}/releases/0.0.1/docs")
+      |> response(404)
     end
 
     test "redirects to tarball", %{user: user} do
@@ -54,7 +54,7 @@ defmodule HexpmWeb.API.DocsControllerTest do
       conn =
         build_conn()
         |> put_req_header("authorization", key_for(user))
-        |> get("api/repos/#{repository.name}/packages/#{package.name}/releases/0.0.1/docs")
+        |> get("/api/repos/#{repository.name}/packages/#{package.name}/releases/0.0.1/docs")
 
       assert redirected_to(conn) =~ "/repos/#{repository.name}/docs/#{package.name}-0.0.1.tar.gz"
     end
@@ -65,7 +65,7 @@ defmodule HexpmWeb.API.DocsControllerTest do
       package = insert(:package, package_owners: [build(:package_owner, user: user)])
       insert(:release, package: package, version: "0.0.1")
 
-      publish_docs(user, package, "0.0.1", [{'index.html', "package v0.0.1"}])
+      publish_docs(user, package, "0.0.1", [{~c"index.html", "package v0.0.1"}])
       |> response(201)
 
       assert Hexpm.Repo.get_by!(assoc(package, :releases), version: "0.0.1").has_docs
@@ -76,6 +76,20 @@ defmodule HexpmWeb.API.DocsControllerTest do
       assert log.action == "docs.publish"
       assert log.params["package"]["name"] == package.name
       assert log.params["release"]["version"] == "0.0.1"
+    end
+
+    test "validates size", %{user: user} do
+      package = insert(:package, package_owners: [build(:package_owner, user: user)])
+      insert(:release, package: package, version: "0.0.1")
+      body = <<0::unquote(8 * (16 * 1024 * 1024 + 1))>>
+
+      conn =
+        build_conn()
+        |> put_req_header("content-type", "application/octet-stream")
+        |> put_req_header("authorization", key_for(user))
+        |> post("/api/packages/#{package.name}/releases/0.0.1/docs", body)
+
+      assert json_response(conn, 422)["errors"] == %{"tar" => "too big"}
     end
   end
 
@@ -92,8 +106,8 @@ defmodule HexpmWeb.API.DocsControllerTest do
 
       insert(:release, package: package, version: "0.0.1")
 
-      publish_docs(user, repository, package, "0.0.1", [{'index.html', "package v0.0.1"}])
-      |> response(403)
+      publish_docs(user, repository, package, "0.0.1", [{~c"index.html", "package v0.0.1"}])
+      |> response(404)
 
       refute Hexpm.Repo.get_by!(assoc(package, :releases), version: "0.0.1").has_docs
     end
@@ -116,13 +130,15 @@ defmodule HexpmWeb.API.DocsControllerTest do
         repository,
         package,
         "0.0.1",
-        [{'index.html', "package v0.0.1"}]
+        [{~c"index.html", "package v0.0.1"}]
       )
-      |> response(403)
+      |> response(404)
 
       refute Hexpm.Repo.get_by!(assoc(package, :releases), version: "0.0.1").has_docs
 
-      publish_docs(organization, repository, package, "0.0.1", [{'index.html', "package v0.0.1"}])
+      publish_docs(organization, repository, package, "0.0.1", [
+        {~c"index.html", "package v0.0.1"}
+      ])
       |> response(201)
 
       assert Hexpm.Repo.get_by!(assoc(package, :releases), version: "0.0.1").has_docs
@@ -141,7 +157,7 @@ defmodule HexpmWeb.API.DocsControllerTest do
       insert(:release, package: package, version: "0.0.1")
       insert(:organization_user, organization: repository.organization, user: user)
 
-      publish_docs(user, repository, package, "0.0.1", [{'index.html', "package v0.0.1"}])
+      publish_docs(user, repository, package, "0.0.1", [{~c"index.html", "package v0.0.1"}])
       |> response(201)
 
       assert Hexpm.Repo.get_by!(assoc(package, :releases), version: "0.0.1").has_docs
@@ -156,7 +172,7 @@ defmodule HexpmWeb.API.DocsControllerTest do
       package = insert(:package, package_owners: [build(:package_owner, user: user)])
       insert(:release, package: package, version: "0.0.1")
 
-      publish_docs(user, package, "0.0.1", [{'index.html', "package v0.0.1"}])
+      publish_docs(user, package, "0.0.1", [{~c"index.html", "package v0.0.1"}])
       |> response(201)
 
       assert Hexpm.Repo.get_by!(assoc(package, :releases), version: "0.0.1").has_docs
@@ -169,14 +185,14 @@ defmodule HexpmWeb.API.DocsControllerTest do
       refute Hexpm.Store.get(:repo_bucket, "docs/#{package.name}-0.0.1.tar.gz", [])
 
       # Check docs were deleted
-      assert get(build_conn(), "api/packages/#{package.name}/releases/0.0.1/docs").status in 400..499
+      assert get(build_conn(), "/api/packages/#{package.name}/releases/0.0.1/docs").status in 400..499
     end
 
     test "delete docs", %{user: user} do
       package = insert(:package, package_owners: [build(:package_owner, user: user)])
       insert(:release, package: package, version: "0.0.1")
 
-      publish_docs(user, package, "0.0.1", [{'index.html', "package v0.0.1"}])
+      publish_docs(user, package, "0.0.1", [{~c"index.html", "package v0.0.1"}])
       |> response(201)
 
       # Revert docs
@@ -214,11 +230,11 @@ defmodule HexpmWeb.API.DocsControllerTest do
       insert(:release, package: package, version: "0.0.1")
       insert(:organization_user, organization: repository.organization, user: user1)
 
-      publish_docs(user1, repository, package, "0.0.1", [{'index.html', "package v0.0.1"}])
+      publish_docs(user1, repository, package, "0.0.1", [{~c"index.html", "package v0.0.1"}])
       |> response(201)
 
       revert_docs(user2, repository, package, "0.0.1")
-      |> response(403)
+      |> response(404)
 
       assert Hexpm.Repo.get_by(assoc(package, :releases), version: "0.0.1").has_docs
 
@@ -239,7 +255,7 @@ defmodule HexpmWeb.API.DocsControllerTest do
       insert(:release, package: package, version: "0.0.1")
       insert(:organization_user, organization: repository.organization, user: user)
 
-      publish_docs(user, repository, package, "0.0.1", [{'index.html', "package v0.0.1"}])
+      publish_docs(user, repository, package, "0.0.1", [{~c"index.html", "package v0.0.1"}])
       |> response(201)
 
       revert_docs(user, repository, package, "0.0.1")
@@ -258,13 +274,13 @@ defmodule HexpmWeb.API.DocsControllerTest do
     build_conn()
     |> put_req_header("content-type", "application/octet-stream")
     |> put_req_header("authorization", key_for(user))
-    |> post("api/packages/#{name}/releases/#{version}/docs", body)
+    |> post("/api/packages/#{name}/releases/#{version}/docs", body)
   end
 
   def revert_docs(user, %Package{name: package}, version) do
     build_conn()
     |> put_req_header("authorization", key_for(user))
-    |> delete("api/packages/#{package}/releases/#{version}/docs")
+    |> delete("/api/packages/#{package}/releases/#{version}/docs")
   end
 
   defp publish_docs(user, %Repository{name: repository}, %Package{name: package}, version, files) do
@@ -273,19 +289,19 @@ defmodule HexpmWeb.API.DocsControllerTest do
     build_conn()
     |> put_req_header("content-type", "application/octet-stream")
     |> put_req_header("authorization", key_for(user))
-    |> post("api/repos/#{repository}/packages/#{package}/releases/#{version}/docs", body)
+    |> post("/api/repos/#{repository}/packages/#{package}/releases/#{version}/docs", body)
   end
 
   def revert_docs(user, %Repository{name: repository}, %Package{name: package}, version) do
     build_conn()
     |> put_req_header("authorization", key_for(user))
-    |> delete("api/repos/#{repository}/packages/#{package}/releases/#{version}/docs")
+    |> delete("/api/repos/#{repository}/packages/#{package}/releases/#{version}/docs")
   end
 
   def revert_release(user, %Package{name: package}, version) do
     build_conn()
     |> put_req_header("authorization", key_for(user))
-    |> delete("api/packages/#{package}/releases/#{version}")
+    |> delete("/api/packages/#{package}/releases/#{version}")
   end
 
   defp create_tarball(files) do

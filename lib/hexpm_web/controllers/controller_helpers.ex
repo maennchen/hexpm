@@ -1,10 +1,11 @@
 defmodule HexpmWeb.ControllerHelpers do
+  use HexpmWeb, :verified_routes
+
   import Plug.Conn
   import Phoenix.Controller
 
   alias Hexpm.Accounts.{Auth, Organizations}
   alias Hexpm.Repository.{Packages, Releases, Repositories}
-  alias HexpmWeb.Router.Helpers, as: Routes
 
   @max_cache_age 60
 
@@ -186,7 +187,7 @@ defmodule HexpmWeb.ControllerHelpers do
   defp none_match?(none_match, etag) do
     if none_match && etag do
       none_match = Plug.Conn.Utils.list(none_match)
-      not (etag in none_match) and not ("*" in none_match)
+      etag not in none_match and "*" not in none_match
     else
       false
     end
@@ -226,7 +227,7 @@ defmodule HexpmWeb.ControllerHelpers do
         |> assign(:organization, repository.organization)
       else
         conn
-        |> HexpmWeb.AuthHelpers.forbidden("account not authorized for this action")
+        |> not_found()
         |> halt()
       end
     else
@@ -242,7 +243,7 @@ defmodule HexpmWeb.ControllerHelpers do
         assign(conn, :organization, organization)
       else
         conn
-        |> HexpmWeb.AuthHelpers.forbidden("account not authorized for this action")
+        |> not_found()
         |> halt()
       end
     else
@@ -314,18 +315,24 @@ defmodule HexpmWeb.ControllerHelpers do
     end
   end
 
-  def authorize(conn, opts) do
-    HexpmWeb.AuthHelpers.authorized(conn, opts)
-  end
-
-  def maybe_authorize(conn, opts) do
-    HexpmWeb.AuthHelpers.maybe_authorized(conn, opts)
-  end
-
   def audit_data(conn) do
     user_or_organization = conn.assigns.current_user || conn.assigns.current_organization
-    {user_or_organization, conn.assigns.user_agent}
+
+    %{
+      user: user_or_organization,
+      key: Map.get(conn.assigns, :key),
+      user_agent: conn.assigns.user_agent,
+      remote_ip: ip_to_string(conn.remote_ip)
+    }
   end
+
+  defp ip_to_string(nil), do: nil
+
+  defp ip_to_string(tuple) when is_tuple(tuple) and tuple_size(tuple) == 4,
+    do: tuple |> Tuple.to_list() |> Enum.join(".")
+
+  defp ip_to_string(tuple) when is_tuple(tuple) and tuple_size(tuple) == 8,
+    do: tuple |> Tuple.to_list() |> Enum.map(&String.to_integer(&1, 16)) |> Enum.join(":")
 
   def password_auth(username, password) do
     case Auth.password_auth(username, password) do
@@ -346,18 +353,19 @@ defmodule HexpmWeb.ControllerHelpers do
 
   def account_linked_message, do: "Account linked successfully"
 
-  def password_breached_message(conn, _opts),
+  def password_breached_message() do
     # docs_path + anchor #password-security
-    do:
-      "The password you provided has previously been breached.
-      To increase your security, please change your password." <>
-        "<br /><a class=\"small\" href=\"#{Routes.docs_path(conn, :faq)}#password-security\">Learn more about our password security.</a>"
+    "The password you provided has previously been breached. " <>
+      "To increase your security, please change your password." <>
+      "<br /><a class=\"small\" href=\"#{~p"/docs/faq"}#password-security\">" <>
+      "Learn more about our password security.</a>"
+  end
 
   def requires_login(conn, _opts) do
     if logged_in?(conn) do
       conn
     else
-      redirect(conn, to: Routes.login_path(conn, :show, return: conn.request_path))
+      redirect(conn, to: ~p"/login?return=#{conn.request_path}")
       |> halt
     end
   end

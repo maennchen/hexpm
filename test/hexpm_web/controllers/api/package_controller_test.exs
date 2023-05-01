@@ -50,41 +50,58 @@ defmodule HexpmWeb.API.PackageControllerTest do
 
   describe "GET /api/packages" do
     test "multiple packages", %{package1: package1} do
-      conn = get(build_conn(), "api/packages")
+      conn = get(build_conn(), "/api/packages")
       result = json_response(conn, 200)
       assert length(result) == 3
       releases = List.first(result)["releases"]
 
       for release <- releases do
-        assert length(Map.keys(release)) == 4
-        assert Map.has_key?(release, "url")
-        assert Map.has_key?(release, "version")
-        assert Map.has_key?(release, "has_docs")
+        assert Map.keys(release) == ["has_docs", "inserted_at", "url", "version"]
+        assert is_boolean(release["has_docs"])
+        assert {:ok, _, 0} = DateTime.from_iso8601(release["inserted_at"])
+        assert URI.parse(release["url"]).scheme
+        assert {:ok, _} = Version.parse(release["version"])
       end
 
-      conn = get(build_conn(), "api/packages?search=#{package1.name}")
+      conn = get(build_conn(), "/api/packages?search=#{package1.name}")
       [package] = json_response(conn, 200)
       [release] = package["releases"]
-      assert release["has_docs"] == true
-
-      conn = get(build_conn(), "api/packages?search=name%3A#{package1.name}*")
+      assert release["has_docs"]
+      conn = get(build_conn(), "/api/packages?search=name%3A#{package1.name}*")
       assert [_] = json_response(conn, 200)
 
-      conn = get(build_conn(), "api/packages?page=1")
+      conn = get(build_conn(), "/api/packages?page=1")
       assert [_, _, _] = json_response(conn, 200)
 
-      conn = get(build_conn(), "api/packages?page=2")
+      conn = get(build_conn(), "/api/packages?page=2")
       assert [] = json_response(conn, 200)
     end
 
     test "sort order", %{package1: package1, package2: package2} do
-      conn = get(build_conn(), "api/packages?sort=updated_at")
+      conn = get(build_conn(), "/api/packages?sort=updated_at")
       result = json_response(conn, 200)
       assert hd(result)["name"] == package2.name
 
-      conn = get(build_conn(), "api/packages?sort=inserted_at")
+      conn = get(build_conn(), "/api/packages?sort=inserted_at")
       result = json_response(conn, 200)
       assert hd(result)["name"] == package1.name
+    end
+
+    test "filter by last_updated", %{package2: package2} do
+      conn = get(build_conn(), "/api/packages?page=1&search=updated_after:2029-01-01T00:00:00Z")
+      assert [result] = json_response(conn, 200)
+      assert result["name"] == package2.name
+
+      conn = get(build_conn(), "/api/packages?page=1&search=updated_after:2030-01-01T00:00:00Z")
+      assert [result] = json_response(conn, 200)
+      assert result["name"] == package2.name
+
+      conn = get(build_conn(), "/api/packages?page=1&search=updated_after:2031-01-01T00:00:00Z")
+      assert [] = json_response(conn, 200)
+
+      # not a date
+      conn = get(build_conn(), "/api/packages?page=1&search=updated_after:1970")
+      assert [_, _, _] = json_response(conn, 200)
     end
 
     test "show private packages", %{user: user, package3: package3} do
@@ -92,7 +109,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
         build_conn()
         # TODO: change to web_login/api_login helper
         |> put_req_header("authorization", key_for(user))
-        |> get("api/packages")
+        |> get("/api/packages")
         |> json_response(200)
 
       assert length(result) == 4
@@ -108,7 +125,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
         build_conn()
         # TODO: change to web_login/api_login helper
         |> put_req_header("authorization", key_for(user))
-        |> get("api/repos/#{repository.name}/packages")
+        |> get("/api/repos/#{repository.name}/packages")
         |> json_response(200)
 
       assert length(result) == 1
@@ -125,7 +142,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
         build_conn()
         # TODO: change to web_login/api_login helper
         |> put_req_header("authorization", key_for(user))
-        |> get("api/repos/#{repository.name}/packages")
+        |> get("/api/repos/#{repository.name}/packages")
         |> json_response(200)
 
       assert length(result) == 1
@@ -137,20 +154,20 @@ defmodule HexpmWeb.API.PackageControllerTest do
       unauthorized_user: unauthorized_user
     } do
       build_conn()
-      |> get("api/repos/#{repository.name}/packages")
-      |> json_response(403)
+      |> get("/api/repos/#{repository.name}/packages")
+      |> json_response(404)
 
       build_conn()
       # TODO: change to web_login/api_login helper
       |> put_req_header("authorization", key_for(unauthorized_user))
-      |> get("api/repos/#{repository.name}/packages")
-      |> json_response(403)
+      |> get("/api/repos/#{repository.name}/packages")
+      |> json_response(404)
     end
   end
 
   describe "GET /api/packages/:name" do
     test "get package", %{package1: package1} do
-      conn = get(build_conn(), "api/packages/#{package1.name}")
+      conn = get(build_conn(), "/api/packages/#{package1.name}")
       result = json_response(conn, 200)
       assert result["name"] == package1.name
       assert result["inserted_at"] == "2030-01-01T00:00:00.000000Z"
@@ -175,7 +192,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
     test "get package for non namespaced private organization", %{user: user, package3: package3} do
       build_conn()
       |> put_req_header("authorization", key_for(user))
-      |> get("api/packages/#{package3.name}")
+      |> get("/api/packages/#{package3.name}")
       |> json_response(404)
     end
 
@@ -184,22 +201,22 @@ defmodule HexpmWeb.API.PackageControllerTest do
       package3: package3
     } do
       build_conn()
-      |> get("api/repos/#{repository.name}/packages/#{package3.name}")
-      |> json_response(403)
+      |> get("/api/repos/#{repository.name}/packages/#{package3.name}")
+      |> json_response(404)
     end
 
-    test "get package returns 403 for unknown organization", %{package1: package1} do
+    test "get package returns 404 for unknown organization", %{package1: package1} do
       build_conn()
-      |> get("api/repos/UNKNOWN_REPOSITORY/packages/#{package1.name}")
-      |> json_response(403)
+      |> get("/api/repos/UNKNOWN_REPOSITORY/packages/#{package1.name}")
+      |> json_response(404)
     end
 
-    test "get package returns 403 for unknown package if you are not authorized", %{
+    test "get package returns 404 for unknown package if you are not authorized", %{
       repository: repository
     } do
       build_conn()
-      |> get("api/repos/#{repository.name}/packages/UNKNOWN_PACKAGE")
-      |> json_response(403)
+      |> get("/api/repos/#{repository.name}/packages/UNKNOWN_PACKAGE")
+      |> json_response(404)
     end
 
     test "get package returns 404 for unknown package if you are authorized", %{
@@ -208,7 +225,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
     } do
       build_conn()
       |> put_req_header("authorization", key_for(user))
-      |> get("api/repos/#{repository.name}/packages/UNKNOWN_PACKAGE")
+      |> get("/api/repos/#{repository.name}/packages/UNKNOWN_PACKAGE")
       |> json_response(404)
     end
 
@@ -220,7 +237,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
       result =
         build_conn()
         |> put_req_header("authorization", key_for(user))
-        |> get("api/repos/#{repository.name}/packages/#{package3.name}")
+        |> get("/api/repos/#{repository.name}/packages/#{package3.name}")
         |> json_response(200)
 
       assert result["name"] == package3.name
@@ -237,7 +254,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
     end
 
     test "get package with retired versions", %{package4: package4} do
-      conn = get(build_conn(), "api/packages/#{package4.name}")
+      conn = get(build_conn(), "/api/packages/#{package4.name}")
       result = json_response(conn, 200)
 
       assert result["retirements"] == %{
@@ -246,7 +263,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
     end
   end
 
-  describe "GET /api/packages/:name/audit_logs" do
+  describe "GET /api/packages/:name/audit-logs" do
     test "returns the first page of audit_logs related to this package when params page is not specified",
          %{package1: package} do
       insert(:audit_log,
@@ -256,7 +273,7 @@ defmodule HexpmWeb.API.PackageControllerTest do
 
       conn =
         build_conn()
-        |> get("/api/packages/#{package.name}/audit_logs")
+        |> get("/api/packages/#{package.name}/audit-logs")
 
       assert [%{"action" => "test.package.audit_logs"}] = json_response(conn, :ok)
     end

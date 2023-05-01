@@ -1,14 +1,14 @@
 defmodule Hexpm.Repository.Package do
   use Hexpm.Schema
-  import Ecto.Query, only: [from: 2]
+  import Ecto.Query
 
-  @derive {HexpmWeb.Stale, assocs: [:releases, :owners, :downloads]}
+  @derive {HexpmWeb.Stale, assocs: [:releases, :owners]}
   @derive {Phoenix.Param, key: :name}
 
   schema "packages" do
     field :name, :string
     field :docs_updated_at, :utc_datetime_usec
-    field :latest_version, Hexpm.Version, virtual: true
+    field :latest_release, :map, virtual: true
     timestamps()
 
     belongs_to :repository, Repository
@@ -20,30 +20,22 @@ defmodule Hexpm.Repository.Package do
     embeds_one :meta, PackageMetadata, on_replace: :delete
   end
 
-  @elixir_names ~w(eex elixir ex_unit iex logger mix)
-  @tool_names ~w(rebar rebar3 hex hexpm mix_hex)
+  @elixir_names ~w(eex elixir elixirc ex_unit iex logger mix)
+  @tool_names ~w(erlang typer to_erl run_erl escript erlc erl epmd dialyzer ct_run rebar rebar3 hex hexpm mix_hex)
   @otp_names ~w(
-    appmon asn1 common_test compiler cosEvent cosEventDomain cosFileTransfer
-    cosNotification cosProperty cosTime cosTransactions crypto debugger
-    dialyzer diameter edoc eldap erl_docgen erl_interface erts et eunit gs hipe
-    ic inets jinterface kernel Makefile megaco mnesia observer odbc orber
-    os_mon ose otp_mibs parsetools percept pman public_key reltool runtime_tools
-    sasl snmp ssh ssl stdlib syntax_tools test_server toolbar tools tv typer
-    webtool wx xmerl
+    otp asn1 common_test compiler crypto debugger dialyzer diameter
+    edoc eldap erl_docgen erl_interface erts et eunit ftp hipe
+    inets jinterface kernel megaco mnesia observer odbc os_mon
+    parsetools public_key reltool runtime_tools sasl snmp ssh
+    ssl stdlib syntax_tools toolbar tools typer wx xmerl
   )
-  @inets_names ~w(ftp tftp httpc httpd http_uri)
-  @app_names ~w(firenest toucan net http net_http mint_pool)
+  @inets_names ~w(tftp httpc httpd)
+  @app_names ~w(toucan net http net_http)
   @windows_names ~w(
     nul con prn aux com1 com2 com3 com4 com5 com6 com7 com8 com9 lpt1 lpt2
     lpt3 lpt4 lpt5 lpt6 lpt7 lpt8 lpt9
   )
-
-  # Backwards compatible for tests, fixed in Hex at 2017-07-29
-  if Mix.env() == :hex do
-    @generic_names []
-  else
-    @generic_names ~w(package organization www)
-  end
+  @generic_names ~w(package organization www myapp lock locked)
 
   @reserved_names Enum.concat([
                     @elixir_names,
@@ -62,7 +54,7 @@ defmodule Hexpm.Repository.Package do
 
     package
     |> cast(params, ~w(name)a)
-    |> unique_constraint(:name, name: "packages_repository_id__lower_name_index")
+    |> unique_constraint(:name, name: :packages_repository_id_name_text_pattern_ops_index)
     |> validate_required(:name)
     |> validate_length(:name, min: 2)
     |> validate_format(:name, ~r"^[a-z]\w*$")
@@ -82,7 +74,7 @@ defmodule Hexpm.Repository.Package do
   end
 
   defp put_first_owner(changeset, user, repository) do
-    if repository.public do
+    if repository.id == 1 do
       put_assoc(changeset, :package_owners, [%PackageOwner{user_id: user.id}])
     else
       changeset
@@ -91,6 +83,8 @@ defmodule Hexpm.Repository.Package do
 
   def update(package, params) do
     cast(package, params, [])
+    # A release publish should always update the package's updated_at
+    |> force_change(:updated_at, DateTime.utc_now())
     |> cast_embed(:meta, with: &PackageMetadata.changeset(&1, &2, package), required: true)
     |> validate_metadata_name()
   end
@@ -102,11 +96,11 @@ defmodule Hexpm.Repository.Package do
       po in PackageOwner,
       left_join: ou in OrganizationUser,
       on: ou.organization_id == ^package.repository.organization_id,
-      where: ou.user_id == ^user.id or ^package.repository.public,
+      where: ou.user_id == ^user.id or ^(package.repository.id == 1),
       where: po.package_id == ^package.id,
       where: po.user_id == ^user.id,
       where: po.level in ^levels,
-      select: count(po.id) >= 1
+      select: count() >= 1
     )
   end
 
@@ -122,7 +116,7 @@ defmodule Hexpm.Repository.Package do
       where: po.package_id == ^package.id,
       where: ou.user_id == ^user.id,
       where: ou.role in ^roles,
-      select: count(po.id) >= 1
+      select: count() >= 1
     )
   end
 
@@ -148,14 +142,14 @@ defmodule Hexpm.Repository.Package do
   end
 
   def count() do
-    from(p in Package, select: count(p.id))
+    from(Package, select: count())
   end
 
   def count(repositories, search) do
     from(
       p in assoc(repositories, :packages),
       join: r in assoc(p, :repository),
-      select: count(p.id)
+      select: count()
     )
     |> search(search)
   end
@@ -191,7 +185,7 @@ defmodule Hexpm.Repository.Package do
 
   defmacrop name_query(p, search) do
     quote do
-      ilike(fragment("?::text", unquote(p).name), ^unquote(search))
+      like(unquote(p).name, fragment("lower(?)", ^unquote(search)))
     end
   end
 
@@ -249,6 +243,20 @@ defmodule Hexpm.Repository.Package do
   defp search_param("description", search, query) do
     search = description_search(search)
     from(p in query, where: description_query(p, search))
+  end
+
+  defp search_param("updated_after", search, query) do
+    case DateTime.from_iso8601(search) do
+      {:ok, updated_after, 0} ->
+        query
+        |> where([p], p.updated_at >= ^updated_after)
+        |> exclude(:order_by)
+        |> order_by([p], asc: p.updated_at)
+
+      # invalid date, ignore the filter
+      _ ->
+        query
+    end
   end
 
   defp search_param("extra", search, query) do
@@ -366,21 +374,11 @@ defmodule Hexpm.Repository.Package do
     from(p in query, order_by: [desc: p.updated_at])
   end
 
-  defp sort(query, :recently_published) do
-    from(
-      p in query,
-      join: r in Release,
-      on: p.id == r.package_id,
-      group_by: p.id,
-      order_by: [desc: max(r.inserted_at), desc: p.id]
-    )
-  end
-
   defp sort(query, :total_downloads) do
     from(
       p in query,
       left_join: d in PackageDownload,
-      on: p.id == d.package_id and (d.view == "all" or is_nil(d.view)),
+      on: p.id == d.package_id and d.view == "all",
       order_by: [fragment("? DESC NULLS LAST", d.downloads)]
     )
   end
@@ -389,7 +387,7 @@ defmodule Hexpm.Repository.Package do
     from(
       p in query,
       left_join: d in PackageDownload,
-      on: p.id == d.package_id and (d.view == "recent" or is_nil(d.view)),
+      on: p.id == d.package_id and d.view == "recent",
       order_by: [fragment("? DESC NULLS LAST", d.downloads)]
     )
   end

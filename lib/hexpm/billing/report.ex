@@ -4,6 +4,8 @@ defmodule Hexpm.Billing.Report do
   alias Hexpm.Repo
   alias Hexpm.Accounts.Organization
 
+  @report_timeout 20_000
+
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, opts)
   end
@@ -14,7 +16,7 @@ defmodule Hexpm.Billing.Report do
   end
 
   def handle_info(:update, opts) do
-    if Repo.write_mode?() do
+    if Application.fetch_env!(:hexpm, :billing_report) and Repo.write_mode?() do
       report = report()
       organizations = organizations()
 
@@ -34,7 +36,7 @@ defmodule Hexpm.Billing.Report do
 
   defp report_request() do
     Task.async(fn -> Hexpm.Billing.report() end)
-    |> Task.await()
+    |> Task.await(@report_timeout)
   end
 
   defp organizations() do

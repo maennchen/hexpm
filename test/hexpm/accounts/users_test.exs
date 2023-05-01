@@ -11,7 +11,7 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{"full_name" => "New Full Name"},
-          audit: {build(:user), "UA"}
+          audit: audit_data(build(:user))
         )
 
       assert %{full_name: "New Full Name"} = updated_user
@@ -32,7 +32,7 @@ defmodule Hexpm.Accounts.UsersTest do
               "slack" => "slack"
             }
           },
-          audit: {build(:user), "UA"}
+          audit: audit_data(build(:user))
         )
 
       assert %{
@@ -54,7 +54,7 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{},
-          audit: {current_user, "UA"}
+          audit: audit_data(current_user)
         )
 
       assert [%{action: "user.update", params: %{"username" => "organization.user"}}] =
@@ -69,12 +69,12 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{"public_email" => "public@example.com"},
-          audit: {current_user, "UA"}
+          audit: audit_data(current_user)
         )
 
-      email = Users.get_email("public@example.com")
+      email = Users.get_maybe_unverified_email("public@example.com")
       assert email.user_id == organization.user.id
-      assert email.public == true
+      assert email.public
 
       current_user_id = current_user.id
       organization_id = organization.id
@@ -106,13 +106,12 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{"public_email" => "public@example.com"},
-          audit: {current_user, "UA"}
+          audit: audit_data(current_user)
         )
 
       email = Users.get_email("public@example.com")
       assert email.user_id == organization.user.id
-      assert email.public == true
-
+      assert email.public
       current_user_id = current_user.id
       organization_id = organization.id
 
@@ -134,13 +133,12 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{"gravatar_email" => "gravatar@example.com"},
-          audit: {current_user, "UA"}
+          audit: audit_data(current_user)
         )
 
-      email = Users.get_email("gravatar@example.com")
+      email = Users.get_maybe_unverified_email("gravatar@example.com")
       assert email.user_id == organization.user.id
-      assert email.gravatar == true
-
+      assert email.gravatar
       current_user_id = current_user.id
       organization_id = organization.id
 
@@ -171,13 +169,12 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{"gravatar_email" => "gravatar@example.com"},
-          audit: {current_user, "UA"}
+          audit: audit_data(current_user)
         )
 
       email = Users.get_email("gravatar@example.com")
       assert email.user_id == organization.user.id
-      assert email.gravatar == true
-
+      assert email.gravatar
       current_user_id = current_user.id
       organization_id = organization.id
 
@@ -198,7 +195,7 @@ defmodule Hexpm.Accounts.UsersTest do
                Users.update_profile(
                  organization.user,
                  %{"public_email" => "public"},
-                 audit: {build(:user), "UA"}
+                 audit: audit_data(build(:user))
                )
     end
 
@@ -209,7 +206,7 @@ defmodule Hexpm.Accounts.UsersTest do
                Users.update_profile(
                  organization.user,
                  %{"gravatar_email" => "gravatar"},
-                 audit: {build(:user), "UA"}
+                 audit: audit_data(build(:user))
                )
     end
 
@@ -225,7 +222,7 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{"public_email" => ""},
-          audit: {current_user, "UA"}
+          audit: audit_data(current_user)
         )
 
       assert Users.get_email("old@example.com") == nil
@@ -250,7 +247,7 @@ defmodule Hexpm.Accounts.UsersTest do
                Users.update_profile(
                  organization.user,
                  %{"public_email" => ""},
-                 audit: {build(:user), "UA"}
+                 audit: audit_data(build(:user))
                )
     end
 
@@ -266,7 +263,7 @@ defmodule Hexpm.Accounts.UsersTest do
         Users.update_profile(
           organization.user,
           %{"gravatar_email" => ""},
-          audit: {current_user, "UA"}
+          audit: audit_data(current_user)
         )
 
       assert Users.get_email("old@example.com") == nil
@@ -291,7 +288,21 @@ defmodule Hexpm.Accounts.UsersTest do
                Users.update_profile(
                  organization.user,
                  %{"gravatar_email" => ""},
-                 audit: {build(:user), "UA"}
+                 audit: audit_data(build(:user))
+               )
+    end
+
+    test "update two emails" do
+      organization = insert(:organization, user: build(:user, emails: []))
+
+      assert {:ok, _updated_user} =
+               Users.update_profile(
+                 organization.user,
+                 %{
+                   "public_email" => "first@example.com",
+                   "gravatar_email" => "second@example.com"
+                 },
+                 audit: audit_data(build(:user))
                )
     end
   end

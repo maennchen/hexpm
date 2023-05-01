@@ -7,7 +7,6 @@ defmodule HexpmWeb.PackageView do
   def show_sort_info(:updated_at), do: "Sort: Recently updated"
   def show_sort_info(:total_downloads), do: "Sort: Total downloads"
   def show_sort_info(:recent_downloads), do: "Sort: Recent downloads"
-  def show_sort_info(:recently_published), do: "Sort: Recently published"
   def show_sort_info(_param), do: nil
 
   def downloads_for_package(package, downloads) do
@@ -116,7 +115,7 @@ defmodule HexpmWeb.PackageView do
     if Regex.match?(@erlang_atom_chars, name) do
       name
     else
-      inspect(String.to_charlist(name))
+      "'#{name}'"
     end
   end
 
@@ -176,9 +175,9 @@ defmodule HexpmWeb.PackageView do
 
   def path_for_audit_logs(package, options) do
     if package.repository.id == 1 do
-      Routes.package_path(Endpoint, :audit_logs, package, options)
+      ~p"/packages/#{package}/audit-logs?#{options}"
     else
-      Routes.package_path(Endpoint, :audit_logs, package.repository, package, options)
+      ~p"/packages/#{package.repository}/#{package}/audit-logs?#{options}"
     end
   end
 

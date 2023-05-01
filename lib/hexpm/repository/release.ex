@@ -1,7 +1,7 @@
 defmodule Hexpm.Repository.Release do
   use Hexpm.Schema
 
-  @derive {HexpmWeb.Stale, assocs: [:requirements, :downloads]}
+  @derive {HexpmWeb.Stale, assocs: [:requirements]}
   @one_hour 60 * 60
   @one_day @one_hour * 24
 
@@ -156,7 +156,7 @@ defmodule Hexpm.Repository.Release do
     do: "can only delete a release up to one hour after publication"
 
   defp editable?(release) do
-    not release.package.repository.public or
+    release.package.repository.id != 1 or
       within_seconds?(release.inserted_at, @one_hour) or
       within_seconds?(release.package.inserted_at, @one_day)
   end
@@ -189,12 +189,20 @@ defmodule Hexpm.Repository.Release do
   def latest_version(releases, opts) do
     only_stable? = Keyword.fetch!(opts, :only_stable)
     unstable_fallback? = Keyword.get(opts, :unstable_fallback, false)
+    with_docs? = Keyword.get(opts, :with_docs)
+
+    with_docs_releases =
+      if with_docs? do
+        Enum.filter(releases, & &1.has_docs)
+      else
+        releases
+      end
 
     stable_releases =
       if only_stable? do
-        Enum.filter(releases, &(to_version(&1).pre == []))
+        Enum.filter(with_docs_releases, &(to_version(&1).pre == []))
       else
-        releases
+        with_docs_releases
       end
 
     if stable_releases == [] and unstable_fallback? do
@@ -243,7 +251,7 @@ defmodule Hexpm.Repository.Release do
   end
 
   def count() do
-    from(r in Release, select: count(r.id))
+    from(Release, select: count())
   end
 
   def recent(repository, count) do
@@ -255,71 +263,6 @@ defmodule Hexpm.Repository.Release do
       limit: ^count,
       select: {p.name, r.version, r.inserted_at, p.meta}
     )
-  end
-
-  defmacrop date_trunc(period, expr) do
-    quote do
-      fragment("date_trunc(?, ?)", unquote(period), unquote(expr))
-    end
-  end
-
-  defmacrop date_trunc_format(period, format, expr) do
-    quote do
-      fragment("to_char(date_trunc(?, ?), ?)", unquote(period), unquote(expr), unquote(format))
-    end
-  end
-
-  def downloads_for_last_n_days(release_id_or_ids, num_of_days) do
-    base_query = downloads_by_period(release_id_or_ids, "day")
-    date_start = Date.add(Date.utc_today(), -1 * num_of_days)
-    from(d in base_query, where: d.day >= ^date_start)
-  end
-
-  def downloads_by_period(release_ids, filter) when is_list(release_ids) do
-    from(d in Download, where: d.release_id in ^release_ids)
-    |> apply_filter(filter)
-  end
-
-  def downloads_by_period(release_id, filter) do
-    from(d in Download, where: d.release_id == ^release_id)
-    |> apply_filter(filter)
-  end
-
-  defp apply_filter(query, filter) do
-    case filter do
-      "day" ->
-        from(
-          d in query,
-          group_by: date_trunc("day", d.day),
-          order_by: date_trunc("day", d.day),
-          select: %Download{
-            day: date_trunc_format("day", "YYYY-MM-DD", d.day),
-            downloads: sum(d.downloads),
-            updated_at: max(d.day)
-          }
-        )
-
-      "month" ->
-        from(
-          d in query,
-          group_by: date_trunc("month", d.day),
-          order_by: date_trunc("month", d.day),
-          select: %Download{
-            day: date_trunc_format("month", "YYYY-MM", d.day),
-            downloads: sum(d.downloads),
-            updated_at: max(d.day)
-          }
-        )
-
-      "all" ->
-        from(
-          d in query,
-          select: %Download{
-            downloads: sum(d.downloads),
-            updated_at: max(d.day)
-          }
-        )
-    end
   end
 end
 

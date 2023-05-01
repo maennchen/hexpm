@@ -11,12 +11,12 @@ defmodule HexpmWeb.LoginControllerTest do
   end
 
   test "show log in page" do
-    conn = get(build_conn(), "login", %{})
+    conn = get(build_conn(), "/login", %{})
     assert response(conn, 200) =~ "Log in"
   end
 
   test "log in with correct password", c do
-    conn = post(build_conn(), "login", %{username: c.user.username, password: "password"})
+    conn = post(build_conn(), "/login", %{username: c.user.username, password: "password"})
     assert redirected_to(conn) == "/users/#{c.user.username}"
 
     assert get_session(conn, "user_id") == c.user.id
@@ -26,14 +26,14 @@ defmodule HexpmWeb.LoginControllerTest do
   @tag :focus
   test "log in when tfa enabled" do
     user = insert(:user_with_tfa)
-    conn = post(build_conn(), "login", %{username: user.username, password: "password"})
-    assert redirected_to(conn) == "/two_factor_auth"
+    conn = post(build_conn(), "/login", %{username: user.username, password: "password"})
+    assert redirected_to(conn) == "/tfa"
 
     assert get_session(conn, "tfa_user_id") == %{return: nil, uid: user.id}
   end
 
   test "log in keeps you logged in", c do
-    conn = post(build_conn(), "login", %{username: c.user.username, password: "password"})
+    conn = post(build_conn(), "/login", %{username: c.user.username, password: "password"})
     assert redirected_to(conn) == "/users/#{c.user.username}"
 
     conn = conn |> recycle() |> get("/")
@@ -41,9 +41,12 @@ defmodule HexpmWeb.LoginControllerTest do
   end
 
   test "log in with wrong password", c do
-    conn = post(build_conn(), "login", %{username: c.user.username, password: "WRONG"})
+    conn = post(build_conn(), "/login", %{username: c.user.username, password: "WRONG"})
     assert response(conn, 400) =~ "Log in"
-    assert get_flash(conn, "error") == "Invalid username, email or password."
+
+    assert Phoenix.Flash.get(conn.assigns.flash, "error") ==
+             "Invalid username, email or password."
+
     refute get_session(conn, "user_id")
     refute last_session().data["user_id"]
   end
@@ -51,21 +54,21 @@ defmodule HexpmWeb.LoginControllerTest do
   test "log in with unconfirmed email", c do
     Ecto.Changeset.change(hd(c.user.emails), verified: false) |> Hexpm.Repo.update!()
 
-    conn = post(build_conn(), "login", %{username: c.user.username, password: "password"})
+    conn = post(build_conn(), "/login", %{username: c.user.username, password: "password"})
     assert response(conn, 400) =~ "Log in"
-    assert get_flash(conn, "error") =~ "Email has not been verified yet."
+    assert Phoenix.Flash.get(conn.assigns.flash, "error") =~ "Email has not been verified yet."
     refute get_session(conn, "user_id")
     refute last_session().data["user_id"]
   end
 
   test "log out", c do
-    conn = post(build_conn(), "login", %{username: c.user.username, password: "password"})
+    conn = post(build_conn(), "/login", %{username: c.user.username, password: "password"})
     assert redirected_to(conn) == "/users/#{c.user.username}"
 
     conn =
       conn
       |> recycle()
-      |> post("logout")
+      |> post("/logout")
 
     assert redirected_to(conn) == "/"
     refute get_session(conn, "user_id")
@@ -74,7 +77,7 @@ defmodule HexpmWeb.LoginControllerTest do
 
   test "login, create hexdocs key and redirect", c do
     conn =
-      post(build_conn(), "login", %{
+      post(build_conn(), "/login", %{
         username: c.user.username,
         password: "password",
         hexdocs: c.organization.name,
@@ -96,13 +99,13 @@ defmodule HexpmWeb.LoginControllerTest do
   end
 
   test "already logged in, create hexdocs key and redirect", c do
-    conn = post(build_conn(), "login", %{username: c.user.username, password: "password"})
+    conn = post(build_conn(), "/login", %{username: c.user.username, password: "password"})
     assert redirected_to(conn) == "/users/#{c.user.username}"
 
     conn =
       conn
       |> recycle()
-      |> post("login", %{
+      |> post("/login", %{
         username: c.user.username,
         password: "password",
         hexdocs: c.organization.name
@@ -113,7 +116,7 @@ defmodule HexpmWeb.LoginControllerTest do
 
   test "log in, try create hexdocs key for wrong organization", c do
     conn =
-      post(build_conn(), "login", %{
+      post(build_conn(), "/login", %{
         username: c.user.username,
         password: "password",
         hexdocs: "not_my_org"
@@ -124,7 +127,7 @@ defmodule HexpmWeb.LoginControllerTest do
 
   test "deactivated", c do
     Ecto.Changeset.change(c.user, deactivated_at: DateTime.utc_now()) |> Repo.update!()
-    conn = post(build_conn(), "login", %{username: c.user.username, password: "password"})
+    conn = post(build_conn(), "/login", %{username: c.user.username, password: "password"})
     assert redirected_to(conn) == "/users/#{c.user.username}"
     conn = get(conn, "/")
     assert response(conn, 400)

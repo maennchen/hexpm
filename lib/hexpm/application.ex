@@ -8,13 +8,15 @@ defmodule Hexpm.Application do
 
     children = [
       Hexpm.RepoBase,
+      {Finch, name: Hexpm.Finch},
       {Task.Supervisor, name: Hexpm.Tasks},
       {Cluster.Supervisor, [topologies, [name: Hexpm.ClusterSupervisor]]},
       {Phoenix.PubSub, name: Hexpm.PubSub, adapter: Phoenix.PubSub.PG2},
       HexpmWeb.RateLimitPubSub,
       {PlugAttack.Storage.Ets, name: HexpmWeb.Plugs.Attack.Storage, clean_period: 60_000},
-      {Hexpm.Throttle, name: Hexpm.SESThrottle, rate: ses_rate(), unit: 1000},
       {Hexpm.Billing.Report, name: Hexpm.Billing.Report, interval: 60_000},
+      goth_spec(),
+      setup(),
       HexpmWeb.Telemetry,
       HexpmWeb.Endpoint
     ]
@@ -31,19 +33,11 @@ defmodule Hexpm.Application do
     :ok
   end
 
-  def ses_rate() do
-    if rate = Application.get_env(:hexpm, :ses_rate) do
-      String.to_integer(rate)
-    else
-      :infinity
-    end
-  end
-
   # Make sure we exit after hex client tests are finished running
   if Mix.env() == :hex do
     def shutdown_on_eof() do
       spawn_link(fn ->
-        IO.gets(:stdio, '') == :eof && System.halt(0)
+        IO.gets(:stdio, ~c"") == :eof && System.halt(0)
       end)
     end
   else
@@ -55,11 +49,41 @@ defmodule Hexpm.Application do
     Application.put_env(:hexpm, :read_only_mode, mode)
   end
 
+  defp setup() do
+    fun = fn ->
+      if System.get_env("HEXPM_SETUP") == "1" do
+        Hexpm.setup()
+      end
+    end
+
+    %{
+      id: :task_setup,
+      start: {Task, :start_link, [fun]},
+      restart: :temporary
+    }
+  end
+
   defp cluster_topologies() do
     if System.get_env("HEXPM_CLUSTER") == "1" do
       Application.get_env(:hexpm, :topologies) || []
     else
       []
+    end
+  end
+
+  if Mix.env() == :prod do
+    defp goth_spec() do
+      credentials =
+        "HEXPM_GCP_CREDENTIALS"
+        |> System.fetch_env!()
+        |> Jason.decode!()
+
+      options = [scope: "https://www.googleapis.com/auth/devstorage.read_write"]
+      {Goth, name: Hexpm.Goth, source: {:service_account, credentials, options}}
+    end
+  else
+    defp goth_spec() do
+      {Task, fn -> :ok end}
     end
   end
 end

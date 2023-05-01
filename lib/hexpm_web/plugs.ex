@@ -4,11 +4,11 @@ defmodule HexpmWeb.Plugs do
   alias Hexpm.Accounts.Users
   alias HexpmWeb.ControllerHelpers
 
-  # Max filesize: ~10mb
+  # Max filesize: 20mib
   # Min upload speed: ~10kb/s
   # Read 100kb every 10s
   @read_body_opts [
-    length: 10_000_000,
+    length: 20 * 1024 * 1024,
     read_length: 100_000,
     read_timeout: 10_000
   ]
@@ -60,22 +60,18 @@ defmodule HexpmWeb.Plugs do
     end
   end
 
-  def user_agent(conn, _opts) do
+  def user_agent(conn, opts) do
     case get_req_header(conn, "user-agent") do
       [value | _] ->
         assign(conn, :user_agent, value)
 
       [] ->
-        if Application.get_env(:hexpm, :user_agent_req) do
+        if Keyword.get(opts, :required, true) && Application.get_env(:hexpm, :user_agent_req) do
           ControllerHelpers.render_error(conn, 400, message: "User-Agent header is required")
         else
           assign(conn, :user_agent, "missing")
         end
     end
-  end
-
-  def web_user_agent(conn, _opts) do
-    assign(conn, :user_agent, "WEB")
   end
 
   def default_repository(conn, _opts) do

@@ -111,6 +111,10 @@ defmodule HexpmWeb.Dashboard.OrganizationView do
     "Not active"
   end
 
+  defp subscription_status(%{"status" => "incomplete_expired"}, _card) do
+    "Not active"
+  end
+
   @trial_ends_no_card_message """
   your subscription will end after the trial period because we have no payment method on file for you,
   please enter a payment method if you wish to continue using organizations after the trial period
@@ -136,12 +140,27 @@ defmodule HexpmWeb.Dashboard.OrganizationView do
     "(\"#{name}\" discount for #{percent_off}% of price)"
   end
 
-  defp invoice_status(%{"paid" => true}, _organization), do: "Paid"
-  defp invoice_status(%{"status" => "uncollectible"}, _organization), do: "Forgiven"
-  defp invoice_status(%{"paid" => false, "attempted" => false}, _organization), do: "Pending"
+  defp invoice_status(%{"paid" => true}, _organization, _card), do: "Paid"
+  defp invoice_status(%{"status" => "uncollectible"}, _organization, _card), do: "Forgiven"
 
-  defp invoice_status(%{"paid" => false, "attempted" => true, "id" => invoice_id}, organization) do
-    form_tag(Routes.organization_path(Endpoint, :pay_invoice, organization, invoice_id)) do
+  defp invoice_status(%{"paid" => false, "attempted" => false}, _organization, _card),
+    do: "Pending"
+
+  defp invoice_status(%{"paid" => false, "attempted" => true}, _organization, nil = _card) do
+    submit(
+      "Pay now",
+      class: "btn btn-primary",
+      disabled: true,
+      title: "No payment method on file"
+    )
+  end
+
+  defp invoice_status(
+         %{"paid" => false, "attempted" => true, "id" => invoice_id},
+         organization,
+         _card
+       ) do
+    form_tag(~p"/dashboard/orgs/#{organization}/invoices/#{invoice_id}/pay") do
       submit("Pay now", class: "btn btn-primary")
     end
   end
@@ -227,7 +246,7 @@ defmodule HexpmWeb.Dashboard.OrganizationView do
     {"CW", "Curaçao"},
     {"CX", "Christmas Island"},
     {"CY", "Cyprus"},
-    # Czechia (Changed for Stripe compatability)
+    # Czechia (Changed for Stripe compatibility)
     {"CZ", "Czech Republic"},
     {"DE", "Germany"},
     {"DJ", "Djibouti"},
@@ -451,5 +470,10 @@ defmodule HexpmWeb.Dashboard.OrganizationView do
 
   defp show_company?(company, errors) do
     (company || errors["company"]) && !errors["person"]
+  end
+
+  defp organization_admin?(current_user, organization) do
+    user = Enum.find(organization.organization_users, &(&1.user_id == current_user.id))
+    user.role == "admin"
   end
 end

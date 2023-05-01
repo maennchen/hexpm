@@ -5,7 +5,7 @@ defmodule Hexpm.Repository.PackageDownload do
   @primary_key false
 
   schema "package_downloads" do
-    belongs_to(:package, Package, references: :id)
+    belongs_to :package, Package, references: :id
     field :view, :string
     field :downloads, :integer
   end
@@ -14,12 +14,11 @@ defmodule Hexpm.Repository.PackageDownload do
     from(
       pd in PackageDownload,
       join: p in assoc(pd, :package),
-      where: not is_nil(pd.package_id),
       where: p.repository_id == ^repository.id,
       where: pd.view == ^view,
-      order_by: [desc: pd.downloads],
+      order_by: [fragment("? DESC NULLS LAST", pd.downloads)],
       limit: ^count,
-      select: {p.name, p.inserted_at, p.meta, pd.downloads}
+      select: {p, pd.downloads}
     )
   end
 
@@ -47,18 +46,6 @@ defmodule Hexpm.Repository.PackageDownload do
       join: p in assoc(pd, :package),
       where: pd.package_id in ^package_ids,
       select: {p.id, pd.view, coalesce(pd.downloads, 0)}
-    )
-  end
-
-  def packages(packages, view) do
-    package_ids = Enum.map(packages, & &1.id)
-
-    from(
-      pd in PackageDownload,
-      join: p in assoc(pd, :package),
-      where: pd.package_id in ^package_ids,
-      where: pd.view == ^view,
-      select: {p.id, pd.downloads}
     )
   end
 end

@@ -48,8 +48,8 @@ defmodule Hexpm.Repository.Releases do
     |> create_package(repository, package, user, meta)
     |> create_release(package, user, inner_checksum, outer_checksum, meta, replace?)
     |> audit_publish(audit_data)
-    |> refresh_package_dependants()
     |> Repo.transaction(timeout: @publish_timeout)
+    |> refresh_package_dependants()
     |> publish_result(user, body)
   end
 
@@ -74,8 +74,8 @@ defmodule Hexpm.Repository.Releases do
     |> audit_revert(audit_data, package, release)
     |> Multi.run(:release_count, &release_count/2)
     |> Multi.run(:package, &maybe_delete_package/2)
-    |> refresh_package_dependants()
     |> Repo.transaction(timeout: @publish_timeout)
+    |> refresh_package_dependants()
     |> revert_result()
   end
 
@@ -99,7 +99,7 @@ defmodule Hexpm.Repository.Releases do
 
     Multi.new()
     |> Multi.run(:repository, fn _, _ -> {:ok, package.repository} end)
-    |> Multi.run(:package, fn _, _ -> {:ok, package} end)
+    |> Multi.update(:package, Ecto.Changeset.change(package, []), force: true)
     |> Multi.update(:release, Release.retire(release, params))
     |> audit_retire(audit_data, package)
     |> Repo.transaction()
@@ -109,26 +109,11 @@ defmodule Hexpm.Repository.Releases do
   def unretire(package, release, audit: audit_data) do
     Multi.new()
     |> Multi.run(:repository, fn _, _ -> {:ok, package.repository} end)
-    |> Multi.run(:package, fn _, _ -> {:ok, package} end)
+    |> Multi.update(:package, Ecto.Changeset.change(package, []), force: true)
     |> Multi.update(:release, Release.unretire(release))
     |> audit_unretire(audit_data, package)
     |> Repo.transaction()
     |> retire_result()
-  end
-
-  def downloads_by_period(package, filter) do
-    if filter in ["day", "month"] do
-      Release.downloads_by_period(package, filter)
-      |> Repo.all()
-    else
-      Release.downloads_by_period(package, "all")
-      |> Repo.one()
-    end
-  end
-
-  def downloads_for_last_n_days(release_id_or_ids, num_of_days) do
-    Release.downloads_for_last_n_days(release_id_or_ids, num_of_days)
-    |> Repo.all()
   end
 
   defp publish_result({:ok, %{package: package, release: release} = result}, user, body) do
@@ -136,7 +121,7 @@ defmodule Hexpm.Repository.Releases do
 
     Assets.push_release(release, body)
     update_package_in_registry(package)
-    email_package_publisher(user, package, release)
+    email_package_owners(package, release, user)
 
     {:ok, %{result | release: release, package: package}}
   end
@@ -144,7 +129,7 @@ defmodule Hexpm.Repository.Releases do
   defp publish_result(result, _user, _body), do: result
 
   defp retire_result({:ok, %{package: package}}) do
-    RegistryBuilder.v2_package(package)
+    RegistryBuilder.package(package)
     :ok
   end
 
@@ -174,9 +159,14 @@ defmodule Hexpm.Repository.Releases do
         Package.build(repository, user, params)
       end
 
-    Multi.insert_or_update(multi, :package, fn %{reserved_packages: reserved_packages} ->
-      validate_reserved_package(changeset, reserved_packages)
-    end)
+    Multi.insert_or_update(
+      multi,
+      :package,
+      fn %{reserved_packages: reserved_packages} ->
+        validate_reserved_package(changeset, reserved_packages)
+      end,
+      force: true
+    )
   end
 
   defp create_release(multi, package, user, inner_checksum, outer_checksum, meta, replace?) do
@@ -219,15 +209,26 @@ defmodule Hexpm.Repository.Releases do
     end
   end
 
-  defp refresh_package_dependants(multi) do
-    Multi.run(multi, :refresh, fn repo, _ ->
-      :ok = repo.refresh_view(Hexpm.Repository.PackageDependant)
-      {:ok, :refresh}
+  defp refresh_package_dependants(result) do
+    Task.Supervisor.start_child(Hexpm.Tasks, fn ->
+      Hexpm.Repo.refresh_view(Hexpm.Repository.PackageDependant)
     end)
+    |> check_alive()
+
+    result
+  end
+
+  defp check_alive({:ok, pid}) do
+    if Process.alive?(pid) do
+      Process.sleep(1)
+      check_alive({:ok, pid})
+    else
+      {:ok, pid}
+    end
   end
 
   defp release_count(repo, %{release: release}) do
-    {:ok, repo.aggregate(assoc(release.package, :releases), :count, :id)}
+    {:ok, repo.aggregate(assoc(release.package, :releases), :count)}
   end
 
   defp maybe_delete_package(repo, %{release_count: release_count, release: release}) do
@@ -236,45 +237,45 @@ defmodule Hexpm.Repository.Releases do
       |> Package.delete()
       |> repo.delete()
     else
-      {:ok, release.package}
+      repo.update(Ecto.Changeset.change(release.package, []), force: true)
     end
   end
 
-  defp email_package_publisher(user, package, release) do
-    user
-    |> Hexpm.Repo.preload(organization: [users: :emails])
-    |> Emails.package_published(package.name, release.version)
-    |> Mailer.deliver_now_throttled()
+  defp email_package_owners(package, release, publisher) do
+    Hexpm.Repo.all(assoc(package, :owners))
+    |> Hexpm.Repo.preload([:emails, organization: [users: :emails]])
+    |> Emails.package_published(publisher, package.name, release.version)
+    |> Mailer.deliver_later!()
   end
 
   if Mix.env() == :test do
     defp update_package_in_registry(package) do
-      RegistryBuilder.v2_package(package)
-      RegistryBuilder.v2_repository(package.repository)
+      RegistryBuilder.package(package)
+      RegistryBuilder.repository(package.repository)
     end
 
     defp remove_package_from_registry(package) do
-      RegistryBuilder.v2_package_delete(package)
-      RegistryBuilder.v2_repository(package.repository)
+      RegistryBuilder.package_delete(package)
+      RegistryBuilder.repository(package.repository)
     end
   else
     defp update_package_in_registry(package) do
-      RegistryBuilder.v2_package(package)
+      RegistryBuilder.package(package)
       metadata = Logger.metadata()
 
       Task.Supervisor.start_child(Hexpm.Tasks, fn ->
         Logger.metadata(metadata)
-        RegistryBuilder.v2_repository(package.repository)
+        RegistryBuilder.repository(package.repository)
       end)
     end
 
     defp remove_package_from_registry(package) do
-      RegistryBuilder.v2_package_delete(package)
+      RegistryBuilder.package_delete(package)
       metadata = Logger.metadata()
 
       Task.Supervisor.start_child(Hexpm.Tasks, fn ->
         Logger.metadata(metadata)
-        RegistryBuilder.v2_repository(package.repository)
+        RegistryBuilder.repository(package.repository)
       end)
     end
   end

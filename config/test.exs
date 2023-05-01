@@ -8,8 +8,13 @@ config :hexpm,
   cdn_url: "http://localhost:5000",
   docs_url: "http://localhost:5002",
   diff_url: "http://localhost:5004",
+  preview_url: "http://localhost:5005",
+  fastly_hexrepo: "fastly_hexrepo",
+  fastly_key: "fastly_key",
+  fastly_purge_wait: 200,
   billing_impl: Hexpm.Billing.Mock,
-  pwned_impl: Hexpm.Pwned.Mock
+  pwned_impl: Hexpm.Pwned.Mock,
+  http_impl: Hexpm.HTTP.Mock
 
 config :hexpm, HexpmWeb.Endpoint,
   http: [port: 5000],
@@ -23,9 +28,11 @@ config :hexpm, Hexpm.RepoBase,
   database: "hexpm_test",
   hostname: "localhost",
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 10,
+  pool_size: 20,
   ownership_timeout: 61_000
 
 config :logger, level: :error
 
-config :goth, config: %{"project_id" => "hexpm"}
+config :hexpm, :hcaptcha,
+  sitekey: "sitekey",
+  secret: "secret"

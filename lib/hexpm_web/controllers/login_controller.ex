@@ -39,7 +39,7 @@ defmodule HexpmWeb.LoginController do
   def delete(conn, _params) do
     conn
     |> delete_session("user_id")
-    |> redirect(to: Routes.page_path(HexpmWeb.Endpoint, :index))
+    |> redirect(to: ~p"/")
   end
 
   def start_session(conn, user, return) do
@@ -68,7 +68,7 @@ defmodule HexpmWeb.LoginController do
   end
 
   defp redirect_return(conn, user, return) do
-    path = return || Routes.user_path(conn, :show, user)
+    path = return || ~p"/users/#{user}"
     redirect(conn, to: path)
   end
 
@@ -97,7 +97,7 @@ defmodule HexpmWeb.LoginController do
     |> put_session("tfa_user_id", %{uid: user_id, return: conn.params["return"]})
     |> maybe_put_breached_flash(breached?)
     |> maybe_put_linked_flash(linked?)
-    |> redirect(to: Routes.tfa_auth_path(conn, :show))
+    |> redirect(to: ~p"/tfa")
   end
 
   defp login(conn, user, password_breached: breached?, account_linked?: linked?) do
@@ -107,12 +107,11 @@ defmodule HexpmWeb.LoginController do
     |> start_session(user, conn.params["return"])
   end
 
+  defp maybe_put_breached_flash(conn, true),
+    do: put_flash(conn, :error, password_breached_message())
+
   defp maybe_put_breached_flash(conn, false), do: conn
 
-  defp maybe_put_breached_flash(conn, true) do
-    put_flash(conn, :error, password_breached_message(conn, []))
-  end
-
   defp maybe_put_linked_flash(conn, true), do: put_flash(conn, :info, account_linked_message())
-  defp maybe_put_linked_flash(conn, _), do: conn
+  defp maybe_put_linked_flash(conn, false), do: conn
 end

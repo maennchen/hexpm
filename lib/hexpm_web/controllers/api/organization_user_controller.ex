@@ -4,11 +4,17 @@ defmodule HexpmWeb.API.OrganizationUserController do
   plug :fetch_organization
 
   plug :authorize,
-       [domain: "api", resource: "read", fun: &organization_access/2]
+       [
+         domains: [{"api", "read"}],
+         fun: {AuthHelpers, :organization_access}
+       ]
        when action in [:index, :show]
 
   plug :authorize,
-       [domain: "api", resource: "write", fun: &organization_access_admin/2]
+       [
+         domains: [{"api", "write"}],
+         fun: {AuthHelpers, :organization_access, [organization_role: "admin"]}
+       ]
        when action in [:create, :update, :delete]
 
   def index(conn, %{"organization" => name}) do
@@ -44,7 +50,7 @@ defmodule HexpmWeb.API.OrganizationUserController do
 
         case Organizations.add_member(organization, user, params, audit: audit_data(conn)) do
           {:ok, organization_user} ->
-            location = Routes.api_organization_user_url(conn, :show, name, user.username)
+            location = ~p"/api/orgs/#{organization}/members/#{user}"
 
             conn
             |> api_cache(:private)

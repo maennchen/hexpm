@@ -10,14 +10,17 @@ defmodule HexpmWeb.UserControllerTest do
     repository2 = insert(:repository)
 
     owners = [build(:package_owner, user: user1)]
-    package1 = insert(:package, name: "package1", package_owners: owners)
+
+    package1 =
+      insert(:package, name: "package1", package_owners: owners, releases: [build(:release)])
 
     package2 =
       insert(
         :package,
         name: "package2",
         package_owners: owners,
-        repository_id: repository1.id
+        repository_id: repository1.id,
+        releases: [build(:release)]
       )
 
     insert(:package, name: "package3", repository_id: repository2.id)
@@ -38,7 +41,7 @@ defmodule HexpmWeb.UserControllerTest do
     conn =
       build_conn()
       |> test_login(c.user1)
-      |> get("users/#{c.user1.username}")
+      |> get("/users/#{c.user1.username}")
 
     assert response(conn, 200) =~ c.user1.username
   end
@@ -47,7 +50,7 @@ defmodule HexpmWeb.UserControllerTest do
     conn =
       build_conn()
       |> test_login(c.user1)
-      |> get("users/#{c.user1.username}")
+      |> get("/users/#{c.user1.username}")
 
     assert response(conn, 200) =~ c.package1.name
     assert response(conn, 200) =~ c.package2.name
@@ -57,7 +60,7 @@ defmodule HexpmWeb.UserControllerTest do
     conn =
       build_conn()
       |> test_login(c.user2)
-      |> get("users/#{c.user1.username}")
+      |> get("/users/#{c.user1.username}")
 
     assert response(conn, 200) =~ c.package1.name
     assert response(conn, 200) =~ c.package2.name
@@ -67,7 +70,7 @@ defmodule HexpmWeb.UserControllerTest do
     conn =
       build_conn()
       |> test_login(c.user3)
-      |> get("users/#{c.user1.username}")
+      |> get("/users/#{c.user1.username}")
 
     assert response(conn, 200) =~ c.package1.name
     refute response(conn, 200) =~ c.package2.name

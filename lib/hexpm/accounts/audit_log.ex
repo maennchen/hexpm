@@ -3,95 +3,127 @@ defmodule Hexpm.Accounts.AuditLog do
 
   schema "audit_logs" do
     field :user_agent, :string
+    field :remote_ip, :string
     field :action, :string
     field :params, :map
 
     belongs_to :user, User
     belongs_to :organization, Organization
+    belongs_to :key, Key
 
     timestamps(updated_at: false)
   end
 
-  def build(nil, user_agent, action, params)
+  def build(%{user: nil} = audit_data, action, params)
       when action in ~w(password.reset.init password.reset.finish) do
     params = extract_params(action, params)
 
     %AuditLog{
       user_id: nil,
       organization_id: nil,
-      user_agent: user_agent,
+      key: audit_data.key,
+      user_agent: truncate_codepoints(audit_data.user_agent, 255),
+      remote_ip: audit_data.remote_ip,
       action: action,
       params: params
     }
   end
 
-  def build(%User{id: user_id}, user_agent, "organization.create", organization) do
+  def build(%{user: %User{id: user_id}} = audit_data, "organization.create", organization) do
     params = extract_params("organization.create", organization)
 
     %AuditLog{
       user_id: user_id,
       organization_id: organization.id,
-      user_agent: user_agent,
+      key: audit_data.key,
+      user_agent: truncate_codepoints(audit_data.user_agent, 255),
+      remote_ip: audit_data.remote_ip,
       action: "organization.create",
       params: params
     }
   end
 
-  def build(%User{id: user_id}, user_agent, action, params) do
+  def build(%{user: %User{id: user_id}} = audit_data, action, params) do
     params = extract_params(action, params)
 
     %AuditLog{
       user_id: user_id,
       organization_id: params[:organization][:id] || params[:package][:organization_id],
-      user_agent: user_agent,
+      key: audit_data.key,
+      user_agent: truncate_codepoints(audit_data.user_agent, 255),
+      remote_ip: audit_data.remote_ip,
       action: action,
       params: params
     }
   end
 
-  def build(%Organization{id: organization_id}, user_agent, action, params) do
+  def build(%{user: %Organization{id: organization_id}} = audit_data, action, params) do
     params = extract_params(action, params)
 
     %AuditLog{
       user_id: nil,
       organization_id: organization_id,
-      user_agent: user_agent,
+      key: audit_data.key,
+      user_agent: truncate_codepoints(audit_data.user_agent, 255),
+      remote_ip: audit_data.remote_ip,
       action: action,
       params: params
     }
   end
 
-  def audit({user, user_agent}, action, params) do
-    build(user, user_agent, action, params)
+  def audit(audit_data, action, params) do
+    build(audit_data, action, params)
   end
 
-  def audit(multi, {user, user_agent}, action, fun) when is_function(fun, 1) do
+  def audit(multi, nil, _action, _fun) do
+    multi
+  end
+
+  def audit(multi, audit_data, action, fun) when is_function(fun, 1) do
     Multi.merge(multi, fn data ->
-      Multi.insert(Multi.new(), multi_key(action), build(user, user_agent, action, fun.(data)))
+      Multi.insert(
+        Multi.new(),
+        multi_key(multi, action),
+        build(audit_data, action, fun.(data))
+      )
     end)
   end
 
-  def audit(multi, {user, user_agent}, action, params) do
-    Multi.insert(multi, multi_key(action), build(user, user_agent, action, params))
+  def audit(multi, audit_data, action, params) do
+    Multi.insert(
+      multi,
+      multi_key(multi, action),
+      build(audit_data, action, params)
+    )
   end
 
-  def audit_many(multi, {user, user_agent}, action, list, opts \\ []) do
+  def audit_many(multi, who, action, list, opts \\ [])
+
+  def audit_many(multi, nil, _action, _list, _opts) do
+    multi
+  end
+
+  def audit_many(multi, audit_data, action, list, opts) do
     fields = AuditLog.__schema__(:fields) -- [:id]
     extra = %{inserted_at: DateTime.utc_now()}
 
     entries =
       Enum.map(list, fn entry ->
-        build(user, user_agent, action, entry)
+        build(audit_data, action, entry)
         |> Map.take(fields)
         |> Map.merge(extra)
       end)
 
-    Multi.insert_all(multi, multi_key(action), AuditLog, entries, opts)
+    Multi.insert_all(multi, multi_key(multi, action), AuditLog, entries, opts)
   end
 
-  def audit_with_user(multi, {_user, user_agent}, action, fun) do
-    Multi.insert(multi, multi_key(action), fn %{user: user} = data ->
-      build(user, user_agent, action, fun.(data))
+  def audit_with_user(multi, nil, _action, _fun) do
+    multi
+  end
+
+  def audit_with_user(multi, %{user: nil} = audit_data, action, fun) do
+    Multi.insert(multi, multi_key(multi, action), fn %{user: user} = data ->
+      build(%{audit_data | user: user}, action, fun.(data))
     end)
   end
 
@@ -262,10 +294,12 @@ defmodule Hexpm.Accounts.AuditLog do
   defp fields(%User{}), do: [:id, :username]
   defp fields(%UserHandles{}), do: [:github, :twitter, :freenode]
 
-  defp multi_key(action), do: :"log.#{action}"
+  defp multi_key(multi, action) do
+    :"log.#{action}.#{length(Multi.to_list(multi))}"
+  end
 
   def count_by(schema) do
-    from(l in all_by(schema), select: count(l))
+    from(l in all_by(schema), select: count())
   end
 
   def all_by(%Hexpm.Repository.Package{} = package) do
@@ -284,5 +318,12 @@ defmodule Hexpm.Accounts.AuditLog do
 
   def newest_first(query) do
     Ecto.Query.order_by(query, desc: :inserted_at)
+  end
+
+  defp truncate_codepoints(string, length) do
+    string
+    |> String.to_charlist()
+    |> Enum.take(length)
+    |> List.to_string()
   end
 end

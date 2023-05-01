@@ -24,20 +24,13 @@ defmodule Hexpm.Repository.Packages do
     package && %{package | repository: repository}
   end
 
-  def owner_with_access?(package, user) do
+  def owner_with_access?(package, user, level \\ "maintainer") do
     repository = package.repository
+    role = PackageOwner.level_to_organization_role(level)
 
-    Repo.one!(Package.package_owner(package, user)) or
-      Repo.one!(Package.organization_owner(package, user)) or
-      (not repository.public and Organizations.access?(repository.organization, user, "write"))
-  end
-
-  def owner_with_full_access?(package, user) do
-    repository = package.repository
-
-    Repo.one!(Package.package_owner(package, user, "full")) or
-      Repo.one!(Package.organization_owner(package, user, "full")) or
-      (not repository.public and Organizations.access?(repository.organization, user, "admin"))
+    Repo.one!(Package.package_owner(package, user, level)) or
+      Repo.one!(Package.organization_owner(package, user, level)) or
+      (repository.id != 1 and Organizations.access?(repository.organization, user, role))
   end
 
   def preload(package) do
@@ -45,14 +38,31 @@ defmodule Hexpm.Repository.Packages do
     update_in(package.releases, &Release.sort/1)
   end
 
-  def attach_versions(packages) do
-    versions = Releases.package_versions(packages)
+  def attach_latest_releases(packages) do
+    package_ids = Enum.map(packages, & &1.id)
+
+    releases =
+      from(
+        r in Release,
+        where: r.package_id in ^package_ids,
+        group_by: r.package_id,
+        select:
+          {r.package_id,
+           {fragment("array_agg(?)", r.version), fragment("array_agg(?)", r.inserted_at)}}
+      )
+      |> Repo.all()
+      |> Map.new(fn {package_id, {versions, inserted_ats}} ->
+        {package_id,
+         Enum.zip_with(versions, inserted_ats, fn version, inserted_at ->
+           %Release{version: version, inserted_at: inserted_at}
+         end)}
+      end)
 
     Enum.map(packages, fn package ->
-      version =
-        Release.latest_version(versions[package.id], only_stable: true, unstable_fallback: true)
+      release =
+        Release.latest_version(releases[package.id], only_stable: true, unstable_fallback: true)
 
-      %{package | latest_version: version}
+      %{package | latest_release: release}
     end)
   end
 
@@ -65,7 +75,10 @@ defmodule Hexpm.Repository.Packages do
   def search_with_versions(repositories, page, packages_per_page, query, sort) do
     Package.all(repositories, page, packages_per_page, query, sort, nil)
     |> Ecto.Query.preload(
-      releases: ^from(r in Release, select: struct(r, [:id, :version, :updated_at, :has_docs]))
+      releases:
+        ^from(r in Release,
+          select: struct(r, [:id, :version, :inserted_at, :updated_at, :has_docs])
+        )
     )
     |> Repo.all()
     |> Enum.map(fn package -> update_in(package.releases, &Release.sort/1) end)
@@ -83,36 +96,6 @@ defmodule Hexpm.Repository.Packages do
 
   def recent(repository, count) do
     Repo.all(Package.recent(repository, count))
-  end
-
-  def package_downloads(package) do
-    PackageDownload.package(package)
-    |> Repo.all()
-    |> Enum.into(%{})
-  end
-
-  def packages_downloads_with_all_views(packages) do
-    PackageDownload.packages_and_all_download_views(packages)
-    |> Repo.all()
-    |> Enum.reduce(%{}, fn {id, view, dls}, acc ->
-      Map.update(acc, id, %{view => dls}, &Map.put(&1, view, dls))
-    end)
-  end
-
-  def packages_downloads(packages, view) do
-    PackageDownload.packages(packages, view)
-    |> Repo.all()
-    |> Enum.into(%{})
-  end
-
-  def top_downloads(repository, view, count) do
-    Repo.all(PackageDownload.top(repository, view, count))
-  end
-
-  def total_downloads() do
-    PackageDownload.total()
-    |> Repo.all()
-    |> Enum.into(%{})
   end
 
   def accessible_user_owned_packages(nil, _) do

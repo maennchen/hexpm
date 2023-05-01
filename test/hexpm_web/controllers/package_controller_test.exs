@@ -12,26 +12,30 @@ defmodule HexpmWeb.PackageControllerTest do
     package2 = insert(:package)
     package3 = insert(:package, repository_id: repository1.id)
     package4 = insert(:package, repository_id: repository2.id)
+    package5 = insert(:package, name: "with_underscore")
 
     insert(
       :release,
       package: package1,
       version: "0.0.1",
-      meta: build(:release_metadata, app: package1.name)
+      meta: build(:release_metadata, app: package1.name),
+      has_docs: true
     )
 
     insert(
       :release,
       package: package1,
       version: "0.0.2",
-      meta: build(:release_metadata, app: package1.name)
+      meta: build(:release_metadata, app: package1.name),
+      has_docs: nil
     )
 
     insert(
       :release,
       package: package1,
-      version: "0.0.3-dev",
-      meta: build(:release_metadata, app: package1.name)
+      version: %Version{major: 0, minor: 0, patch: 3, pre: ["dev", 0, 1]},
+      meta: build(:release_metadata, app: package1.name),
+      has_docs: true
     )
 
     insert(
@@ -55,6 +59,13 @@ defmodule HexpmWeb.PackageControllerTest do
       meta: build(:release_metadata, app: package4.name)
     )
 
+    insert(
+      :release,
+      package: package5,
+      version: "0.0.1",
+      meta: build(:release_metadata, app: package5.name)
+    )
+
     insert(:organization_user, user: user1, organization: repository1.organization)
 
     %{
@@ -62,6 +73,7 @@ defmodule HexpmWeb.PackageControllerTest do
       package2: package2,
       package3: package3,
       package4: package4,
+      package5: package5,
       repository1: repository1,
       repository2: repository2,
       user1: user1,
@@ -91,6 +103,19 @@ defmodule HexpmWeb.PackageControllerTest do
 
       conn = get(build_conn(), "/packages?search=#{package2.name}")
       assert response(conn, 200) =~ ~r/#{package2.name}.*1.0.0/s
+    end
+
+    test "search with whitespace", %{package5: package5} do
+      conn = get(build_conn(), "/packages?search=with underscore")
+      assert response(conn, 200) =~ "exact-match"
+      assert response(conn, 200) =~ package5.name
+      refute response(conn, 200) =~ "no-results"
+    end
+
+    test "search without match" do
+      conn = get(build_conn(), "/packages?search=nonexistent")
+      assert response(conn, 200) =~ "no-results"
+      refute response(conn, 200) =~ "exact-match"
     end
 
     test "list private packages", %{
@@ -151,6 +176,17 @@ defmodule HexpmWeb.PackageControllerTest do
       assert html_response =~ "Revert release"
       assert html_response =~ "Retire release"
       assert html_response =~ "Unretire release"
+    end
+
+    test "show latest valid version documentation link", %{package1: package} do
+      html_response =
+        build_conn()
+        |> get("/packages/#{package.name}")
+        |> html_response(200)
+
+      assert html_response =~ "0.0.1.tar.gz"
+      refute html_response =~ "0.0.2.tar.gz"
+      refute html_response =~ "0.0.3-dev.0.1.tar.gz"
     end
   end
 
@@ -250,11 +286,11 @@ defmodule HexpmWeb.PackageControllerTest do
     end
   end
 
-  describe "GET /packages/:name/audit_logs" do
+  describe "GET /packages/:name/audit-logs" do
     test "sets title correctly" do
       _package = insert(:package, name: "Test")
 
-      conn = get(build_conn(), "/packages/Test/audit_logs")
+      conn = get(build_conn(), "/packages/Test/audit-logs")
 
       assert response(conn, :ok) =~ "Recent Activities for Test"
     end
@@ -263,18 +299,18 @@ defmodule HexpmWeb.PackageControllerTest do
       package = insert(:package, name: "Test")
       insert(:audit_log, action: "docs.publish", params: %{package: %{id: package.id}})
 
-      conn = get(build_conn(), "/packages/Test/audit_logs")
+      conn = get(build_conn(), "/packages/Test/audit-logs")
 
       assert response(conn, :ok) =~ "Publish documentation"
     end
   end
 
-  describe "GET /packages/:repository/:name/audit_logs" do
+  describe "GET /packages/:repository/:name/audit-logs" do
     test "requires access to this repository" do
       repository = insert(:repository, name: "Repo")
       _package = insert(:package, repository_id: repository.id, name: "Test")
 
-      conn = get(build_conn(), "/packages/Repo/Test/audit_logs")
+      conn = get(build_conn(), "/packages/Repo/Test/audit-logs")
 
       assert response(conn, :not_found)
     end

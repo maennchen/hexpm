@@ -16,6 +16,8 @@ defmodule HexpmWeb do
   below.
   """
 
+  def static_paths, do: ~w(css images js favicon.ico robots.txt)
+
   def controller() do
     quote do
       use Phoenix.Controller, namespace: HexpmWeb
@@ -25,10 +27,12 @@ defmodule HexpmWeb do
 
       import HexpmWeb.{ControllerHelpers, AuthHelpers}
 
-      alias HexpmWeb.{Endpoint, Router}
+      alias HexpmWeb.{AuthHelpers, Endpoint, Router}
       alias HexpmWeb.Router.Helpers, as: Routes
 
       use Hexpm.Shared
+
+      unquote(verified_routes())
     end
   end
 
@@ -63,6 +67,8 @@ defmodule HexpmWeb do
       alias HexpmWeb.Router.Helpers, as: Routes
 
       use Hexpm.Shared
+
+      unquote(verified_routes())
     end
   end
 
@@ -73,6 +79,17 @@ defmodule HexpmWeb do
 
       alias HexpmWeb.{Endpoint, Router}
       alias HexpmWeb.Router.Helpers, as: Routes
+
+      unquote(verified_routes())
+    end
+  end
+
+  def verified_routes do
+    quote do
+      use Phoenix.VerifiedRoutes,
+        endpoint: HexpmWeb.Endpoint,
+        router: HexpmWeb.Router,
+        statics: HexpmWeb.static_paths()
     end
   end
 

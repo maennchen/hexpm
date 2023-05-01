@@ -4,14 +4,19 @@ defmodule HexpmWeb.API.OwnerController do
   plug :maybe_fetch_package
 
   plug :authorize,
-       [domain: "api", resource: "read", fun: &repository_access/2]
+       [
+         domains: [{"api", "read"}],
+         fun: {AuthHelpers, :organization_access}
+       ]
        when action in [:index, :show]
 
   plug :authorize,
        [
-         domain: "api",
-         resource: "write",
-         fun: [&maybe_full_package_owner/2, &organization_billing_active/2]
+         domains: [{"api", "write"}, "package"],
+         fun: [
+           {AuthHelpers, :package_owner, [owner_level: "full"]},
+           {AuthHelpers, :organization_billing_active, [owner_level: "full"]}
+         ]
        ]
        when action in [:create, :delete]
 
@@ -59,13 +64,14 @@ defmodule HexpmWeb.API.OwnerController do
 
           {:error, :not_member} ->
             validation_failed(conn, %{
-              "username" => "cannot add owner that is not a member of the organization"
+              "username" =>
+                "cannot add owner to private package when the user is not a member of the organization"
             })
 
           {:error, :not_organization_transfer} ->
             validation_failed(conn, %{
               "username" =>
-                "organization ownership can only be transfered, removing all existing owners"
+                "organization ownership can only be transferred, removing all existing owners"
             })
 
           {:error, :organization_level} ->

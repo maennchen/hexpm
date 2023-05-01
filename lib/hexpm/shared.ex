@@ -23,6 +23,7 @@ defmodule Hexpm.Shared do
         Emails.Mailer,
         Repository.Assets,
         Repository.Download,
+        Repository.Downloads,
         Repository.Install,
         Repository.Installs,
         Repository.Owners,
@@ -44,7 +45,6 @@ defmodule Hexpm.Shared do
         Repository.Repositories,
         Repository.Repository,
         Repository.Requirement,
-        Repository.Resolver,
         Repository.Sitemaps
       }
     end

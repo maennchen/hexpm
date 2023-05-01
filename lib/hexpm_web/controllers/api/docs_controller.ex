@@ -1,18 +1,22 @@
 defmodule HexpmWeb.API.DocsController do
   use HexpmWeb, :controller
 
+  @tarball_max_size 16 * 1024 * 1024
+
   plug :fetch_release
 
-  plug :maybe_authorize,
+  plug :authorize,
        [
-         domain: "api",
-         resource: "read",
-         fun: [&repository_access/2, &organization_billing_active/2]
+         domains: [{"api", "read"}],
+         fun: [{AuthHelpers, :organization_access}, {AuthHelpers, :organization_billing_active}]
        ]
        when action in [:show]
 
   plug :authorize,
-       [domain: "api", resource: "write", fun: [&package_owner/2, &organization_billing_active/2]]
+       [
+         domains: [{"api", "write"}, "package"],
+         fun: [{AuthHelpers, :package_owner}, {AuthHelpers, :organization_billing_active}]
+       ]
        when action in [:create, :delete]
 
   def show(conn, _params) do
@@ -25,6 +29,10 @@ defmodule HexpmWeb.API.DocsController do
     else
       not_found(conn)
     end
+  end
+
+  def create(conn, %{"body" => body}) when byte_size(body) > @tarball_max_size do
+    validation_failed(conn, %{tar: "too big"})
   end
 
   def create(conn, %{"body" => body}) do
@@ -53,8 +61,10 @@ defmodule HexpmWeb.API.DocsController do
   end
 
   defp log_tarball(repository, package, version, request_id, body) do
-    filename = "#{repository}-#{package}-#{version}-#{request_id}.tar.gz"
-    key = Path.join(["debug", "docs", filename])
-    Hexpm.Store.put(:repo_bucket, key, body, [])
+    Task.Supervisor.start_child(Hexpm.Tasks, fn ->
+      filename = "#{repository}-#{package}-#{version}-#{request_id}.tar.gz"
+      key = Path.join(["debug", "docs", filename])
+      Hexpm.Store.put(:repo_bucket, key, body, [])
+    end)
   end
 end
